@@ -1,0 +1,160 @@
+openapi: 3.0.0
+info:
+  title: FX Rates Service API
+  version: 1.0.0
+  description: Service for managing foreign exchange rate quotes
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /quotes/updates:
+    post:
+      summary: Request a quote update
+      operationId: requestQuoteUpdate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteUpdateRequest'
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            description: Idempotency key for the request
+      responses:
+        '200':
+          description: Quote update request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteUpdateResponse'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+  /quotes/updates/{id}:
+    get:
+      summary: Get quote update status
+      operationId: getQuoteUpdate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The update ID
+      responses:
+        '200':
+          description: Quote update details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteUpdateDetails'
+        '404':
+          description: Update not found
+        '500':
+          description: Internal server error
+
+  /quotes/last:
+    get:
+      summary: Get last quote for a currency pair
+      operationId: getLastQuote
+      parameters:
+        - name: pair
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Currency pair (e.g., USD/EUR)
+      responses:
+        '200':
+          description: Last quote details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastQuote'
+        '404':
+          description: Quote not found
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+components:
+  schemas:
+    QuoteUpdateRequest:
+      type: object
+      required:
+        - pair
+      properties:
+        pair:
+          type: string
+          description: Currency pair (e.g., USD/EUR)
+          example: USD/EUR
+
+    QuoteUpdateResponse:
+      type: object
+      required:
+        - update_id
+      properties:
+        update_id:
+          type: string
+          description: Unique identifier for the update request
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    QuoteUpdateDetails:
+      type: object
+      required:
+        - update_id
+        - pair
+        - status
+        - updated_at
+      properties:
+        update_id:
+          type: string
+          description: Unique identifier for the update request
+        pair:
+          type: string
+          description: Currency pair
+        price:
+          type: number
+          format: float
+          description: Quote price (if available)
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of the update
+        status:
+          type: string
+          enum: [pending, completed, failed]
+          description: Status of the update request
+        error:
+          type: string
+          description: Error message (if status is failed)
+          nullable: true
+
+    LastQuote:
+      type: object
+      required:
+        - pair
+        - updated_at
+      properties:
+        pair:
+          type: string
+          description: Currency pair
+        price:
+          type: number
+          format: float
+          description: Last quote price
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of the quote
+
