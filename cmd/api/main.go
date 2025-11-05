@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"fxrates-service/internal/adapters/logx"
+	"fxrates-service/internal/infrastructure/logx"
 	"go.uber.org/zap"
 )
 

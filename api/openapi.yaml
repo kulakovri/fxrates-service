@@ -13,30 +13,28 @@ paths:
     post:
       summary: Request a quote update
       operationId: requestQuoteUpdate
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          description: Idempotency key for the request
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/QuoteUpdateRequest'
-      parameters:
-        - name: X-Idempotency-Key
-          in: header
-          required: false
-          schema:
-            type: string
-            description: Idempotency key for the request
       responses:
-        '200':
+        '202':
           description: Quote update request accepted
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuoteUpdateResponse'
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /quotes/updates/{id}:
     get:
@@ -157,4 +155,10 @@ components:
           type: string
           format: date-time
           description: Timestamp of the quote
+
+  responses:
+    BadRequest:
+      description: Bad request
+    InternalError:
+      description: Internal server error
 
