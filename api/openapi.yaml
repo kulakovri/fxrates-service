@@ -1,5 +1,9 @@
 openapi: 3.0.0
 info:
+  x-oapi-codegen:
+    generate:
+      models: true
+    package: openapi
   title: FX Rates Service API
   version: 1.0.0
   description: Service for managing foreign exchange rate quotes

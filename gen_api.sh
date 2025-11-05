@@ -8,7 +8,7 @@ OUT_PKG_DIR="$ROOT_DIR/internal/infrastructure/http/openapi"
 # Ensure oapi-codegen is present
 if ! command -v oapi-codegen >/dev/null 2>&1; then
   echo "oapi-codegen not found. Installing..."
-  go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+  go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@2.3.0
 fi
 
 rm -rf "$OUT_PKG_DIR"
