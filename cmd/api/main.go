@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/logx"
 	"go.uber.org/zap"
 )
@@ -20,14 +21,10 @@ func main() {
 	env := "dev"
 	serviceName := "fxrates-service"
 
-	// Setup HTTP server
-	mux := http.NewServeMux()
-
-	// Health check endpoint
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	// Setup HTTP server via generated router
+	svc := httpserver.NewInMemoryService()
+	srv := httpserver.NewServer(svc)
+	mux := httpserver.NewRouter(srv)
 
 	server := &http.Server{
 		Addr:    port,
