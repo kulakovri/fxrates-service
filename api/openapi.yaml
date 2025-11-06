@@ -135,7 +135,7 @@ components:
           description: Timestamp of the update
         status:
           type: string
-          enum: [pending, completed, failed]
+          enum: [queued, processing, done, failed]
           description: Status of the update request
         error:
           type: string
