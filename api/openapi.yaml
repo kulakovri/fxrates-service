@@ -1,5 +1,9 @@
 openapi: 3.0.0
 info:
+  x-oapi-codegen:
+    generate:
+      models: true
+    package: openapi
   title: FX Rates Service API
   version: 1.0.0
   description: Service for managing foreign exchange rate quotes
@@ -13,30 +17,28 @@ paths:
     post:
       summary: Request a quote update
       operationId: requestQuoteUpdate
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          description: Idempotency key for the request
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/QuoteUpdateRequest'
-      parameters:
-        - name: X-Idempotency-Key
-          in: header
-          required: false
-          schema:
-            type: string
-            description: Idempotency key for the request
       responses:
-        '200':
+        '202':
           description: Quote update request accepted
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuoteUpdateResponse'
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /quotes/updates/{id}:
     get:
@@ -133,7 +135,7 @@ components:
           description: Timestamp of the update
         status:
           type: string
-          enum: [pending, completed, failed]
+          enum: [queued, processing, done, failed]
           description: Status of the update request
         error:
           type: string
@@ -157,4 +159,10 @@ components:
           type: string
           format: date-time
           description: Timestamp of the quote
+
+  responses:
+    BadRequest:
+      description: Bad request
+    InternalError:
+      description: Internal server error
 
