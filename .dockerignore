@@ -1,0 +1,15 @@
+.git
+.github
+.cursor
+**/*.md
+**/*_test.go
+**/testdata
+ops/docker
+scripts
+node_modules
+.idea
+.vscode
+dist
+build
+
+
