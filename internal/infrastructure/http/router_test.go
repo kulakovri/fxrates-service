@@ -25,6 +25,15 @@ func TestHealthz(t *testing.T) {
 	require.Equal(t, "OK", rec.Body.String())
 }
 
+func TestReadyz(t *testing.T) {
+	h := setup()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "READY", rec.Body.String())
+}
+
 func TestRequestQuoteUpdate(t *testing.T) {
 	h := setup()
 	body := map[string]string{"pair": "EUR/USD"}

@@ -7,6 +7,7 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
+	"sync"
 )
 
 var _ application.QuoteRepo = (*fakeQuoteRepo)(nil)
@@ -14,10 +15,13 @@ var _ application.UpdateJobRepo = (*fakeUpdateJobRepo)(nil)
 var _ application.RateProvider = (*fakeRateProvider)(nil)
 
 type fakeQuoteRepo struct {
+	mu    sync.RWMutex
 	store map[string]domain.Quote
 }
 
 func (f *fakeQuoteRepo) GetLast(_ context.Context, pair string) (domain.Quote, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	if f.store == nil {
 		return domain.Quote{}, application.ErrNotFound
 	}
@@ -29,6 +33,8 @@ func (f *fakeQuoteRepo) GetLast(_ context.Context, pair string) (domain.Quote, e
 }
 
 func (f *fakeQuoteRepo) Upsert(_ context.Context, q domain.Quote) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.store == nil {
 		f.store = map[string]domain.Quote{}
 	}
@@ -37,10 +43,13 @@ func (f *fakeQuoteRepo) Upsert(_ context.Context, q domain.Quote) error {
 }
 
 type fakeUpdateJobRepo struct {
+	mu   sync.RWMutex
 	jobs map[string]domain.QuoteUpdate
 }
 
 func (f *fakeUpdateJobRepo) CreateQueued(_ context.Context, pair string, _ *string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.jobs == nil {
 		f.jobs = map[string]domain.QuoteUpdate{}
 	}
@@ -50,6 +59,8 @@ func (f *fakeUpdateJobRepo) CreateQueued(_ context.Context, pair string, _ *stri
 }
 
 func (f *fakeUpdateJobRepo) GetByID(_ context.Context, id string) (domain.QuoteUpdate, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	if f.jobs == nil {
 		return domain.QuoteUpdate{}, application.ErrNotFound
 	}
@@ -61,6 +72,8 @@ func (f *fakeUpdateJobRepo) GetByID(_ context.Context, id string) (domain.QuoteU
 }
 
 func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain.QuoteUpdateStatus, errMsg *string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.jobs == nil {
 		return errors.New("no jobs")
 	}
@@ -76,6 +89,8 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 }
 
 func (f *fakeUpdateJobRepo) ListQueuedIDs() []string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	var ids []string
 	for id, j := range f.jobs {
 		if j.Status == domain.QuoteUpdateStatusQueued {
