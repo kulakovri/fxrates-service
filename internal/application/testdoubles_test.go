@@ -8,8 +8,7 @@ import (
 )
 
 var (
-	ErrRepo       = errors.New("repo error")
-	ErrNotFoundTD = errors.New("not found")
+	ErrRepo = errors.New("repo error")
 )
 
 type fakeQuoteRepo struct {
@@ -23,7 +22,7 @@ func (f *fakeQuoteRepo) GetLast(_ context.Context, pair string) (domain.Quote, e
 	}
 	q, ok := f.store[pair]
 	if !ok {
-		return domain.Quote{}, ErrNotFoundTD
+		return domain.Quote{}, ErrNotFound
 	}
 	return q, nil
 }
@@ -62,7 +61,7 @@ func (f *fakeUpdateJobRepo) GetByID(_ context.Context, id string) (domain.QuoteU
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return domain.QuoteUpdate{}, ErrNotFoundTD
+		return domain.QuoteUpdate{}, ErrNotFound
 	}
 	return j, nil
 }
@@ -73,7 +72,7 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return ErrNotFoundTD
+		return ErrNotFound
 	}
 	j.Status, j.Error = st, errMsg
 	f.jobs[id] = j
