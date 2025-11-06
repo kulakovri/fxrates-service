@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"errors"
-	"time"
 
 	"fxrates-service/internal/domain"
 )
@@ -12,10 +11,6 @@ var (
 	ErrRepo     = errors.New("repo error")
 	ErrNotFound = errors.New("not found")
 )
-
-type fakeClock struct{ t time.Time }
-
-func (c fakeClock) Now() time.Time { return c.t }
 
 type fakeQuoteRepo struct {
 	store map[string]domain.Quote

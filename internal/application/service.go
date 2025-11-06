@@ -2,37 +2,42 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"fxrates-service/internal/domain"
+
+	"github.com/google/uuid"
 )
+
+// Functional seams for time and ID generation
+type ClockFunc func() time.Time
+type IDGenFunc func() string
+
+// Option allows injecting behavior into FXRatesService
+type Option func(*FXRatesService)
 
 type FXRatesService struct {
 	quoteRepo     QuoteRepo
 	updateJobRepo UpdateJobRepo
 	rateProvider  RateProvider
-	clock         Clock
-	idgen         IDGen
+
+	now   ClockFunc
+	newID IDGenFunc
 }
 
-type Option func(*FXRatesService)
-
-func WithClock(c Clock) Option { return func(s *FXRatesService) { s.clock = c } }
-func WithIDGen(g IDGen) Option { return func(s *FXRatesService) { s.idgen = g } }
+func WithClock(f ClockFunc) Option { return func(s *FXRatesService) { s.now = f } }
+func WithIDGen(f IDGenFunc) Option { return func(s *FXRatesService) { s.newID = f } }
 
 func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, opts ...Option) *FXRatesService {
 	s := &FXRatesService{
 		quoteRepo:     quoteRepo,
 		updateJobRepo: updateJobRepo,
 		rateProvider:  rateProvider,
+		now:           time.Now,
+		newID:         func() string { return uuid.NewString() },
 	}
 	for _, opt := range opts {
 		opt(s)
-	}
-	if s.clock == nil {
-		s.clock = realClock{}
-	}
-	if s.idgen == nil {
-		s.idgen = defaultIDGen{}
 	}
 	return s
 }

@@ -17,7 +17,8 @@ func Test_RequestQuoteUpdate(t *testing.T) {
 		&fakeQuoteRepo{store: map[string]domain.Quote{}},
 		u,
 		&fakeRateProvider{},
-		WithClock(fakeClock{t: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}),
+		WithClock(func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }),
+		WithIDGen(func() string { return "update-1" }),
 	)
 
 	id, err := svc.RequestQuoteUpdate(context.Background(), "EUR/USD", strPtr("idem-1"))
