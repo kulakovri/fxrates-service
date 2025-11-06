@@ -10,14 +10,31 @@ type FXRatesService struct {
 	quoteRepo     QuoteRepo
 	updateJobRepo UpdateJobRepo
 	rateProvider  RateProvider
+	clock         Clock
+	idgen         IDGen
 }
 
-func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider) *FXRatesService {
-	return &FXRatesService{
+type Option func(*FXRatesService)
+
+func WithClock(c Clock) Option { return func(s *FXRatesService) { s.clock = c } }
+func WithIDGen(g IDGen) Option { return func(s *FXRatesService) { s.idgen = g } }
+
+func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, opts ...Option) *FXRatesService {
+	s := &FXRatesService{
 		quoteRepo:     quoteRepo,
 		updateJobRepo: updateJobRepo,
 		rateProvider:  rateProvider,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.clock == nil {
+		s.clock = realClock{}
+	}
+	if s.idgen == nil {
+		s.idgen = defaultIDGen{}
+	}
+	return s
 }
 
 func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, idem *string) (string, error) {
