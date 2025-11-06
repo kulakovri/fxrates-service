@@ -75,15 +75,25 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 	return nil
 }
 
+func (f *fakeUpdateJobRepo) ListQueuedIDs() []string {
+	var ids []string
+	for id, j := range f.jobs {
+		if j.Status == domain.QuoteUpdateStatusQueued {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 type fakeRateProvider struct{}
 
 func (fakeRateProvider) Get(_ context.Context, pair string) (domain.Quote, error) {
 	return domain.Quote{Pair: domain.Pair(pair), Price: 0, UpdatedAt: time.Now()}, nil
 }
 
-func NewInMemoryService() *application.FXRatesService {
+func NewInMemoryService() (*application.FXRatesService, *fakeQuoteRepo, *fakeUpdateJobRepo, fakeRateProvider) {
 	qr := &fakeQuoteRepo{store: map[string]domain.Quote{}}
 	ur := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
 	rp := fakeRateProvider{}
-	return application.NewFXRatesService(qr, ur, rp)
+	return application.NewFXRatesService(qr, ur, rp), qr, ur, rp
 }

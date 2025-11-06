@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/logx"
+	"fxrates-service/internal/infrastructure/worker"
 	"go.uber.org/zap"
 )
 
@@ -22,9 +24,15 @@ func main() {
 	serviceName := "fxrates-service"
 
 	// Setup HTTP server via generated router
-	svc := httpserver.NewInMemoryService()
+	svc, quoteRepo, jobRepo, provider := httpserver.NewInMemoryService()
 	srv := httpserver.NewServer(svc)
 	mux := httpserver.NewRouter(srv)
+
+	// Start in-memory worker
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &worker.InMemWorker{Updates: jobRepo, Quotes: quoteRepo, Provider: provider, PollEvery: 500 * time.Millisecond}
+	go w.Start(ctx)
 
 	server := &http.Server{
 		Addr:    port,

@@ -11,7 +11,7 @@ import (
 )
 
 func setup() http.Handler {
-	svc := NewInMemoryService()
+	svc, _, _, _ := NewInMemoryService()
 	srv := NewServer(svc)
 	return NewRouter(srv)
 }
