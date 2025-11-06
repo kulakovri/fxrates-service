@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
 	"fxrates-service/internal/infrastructure/http/openapi"
 )
-
-var ErrNotFound = errors.New("not found")
 
 type Server struct {
 	svc *application.FXRatesService
@@ -21,16 +20,21 @@ func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: sv
 func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, params openapi.RequestQuoteUpdateParams) {
 	var body openapi.QuoteUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		badRequest(w, "invalid JSON body")
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	if body.Pair == "" {
-		badRequest(w, "pair is required")
+		writeError(w, http.StatusBadRequest, "pair is required")
+		return
+	}
+	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
+	if !rePair.MatchString(body.Pair) {
+		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
 		return
 	}
 	id, err := s.svc.RequestQuoteUpdate(r.Context(), body.Pair, params.XIdempotencyKey)
 	if err != nil {
-		internalError(w)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	resp := openapi.QuoteUpdateResponse{UpdateId: id}
@@ -40,11 +44,11 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id string) {
 	upd, err := s.svc.GetQuoteUpdate(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			notFound(w)
+		if errors.Is(err, application.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		internalError(w)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	resp := openapi.QuoteUpdateDetails{
@@ -57,13 +61,18 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 }
 
 func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params openapi.GetLastQuoteParams) {
+	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
+	if !rePair.MatchString(params.Pair) {
+		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
+		return
+	}
 	q, err := s.svc.GetLastQuote(r.Context(), params.Pair)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			notFound(w)
+		if errors.Is(err, application.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		internalError(w)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	var price *float32
@@ -85,16 +94,15 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func badRequest(w http.ResponseWriter, msg string) {
-	http.Error(w, msg, http.StatusBadRequest)
+type apiError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
-func notFound(w http.ResponseWriter) {
-	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-}
-
-func internalError(w http.ResponseWriter) {
-	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+func writeError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(apiError{Code: code, Message: msg})
 }
 
 func mapStatus(s domain.QuoteUpdateStatus) openapi.QuoteUpdateDetailsStatus {

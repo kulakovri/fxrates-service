@@ -48,6 +48,7 @@ func TestGetQuoteUpdate_NotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.JSONEq(t, `{"code":404,"message":"not found"}`, rec.Body.String())
 }
 
 func TestGetLastQuote_EmptyStore(t *testing.T) {
@@ -56,4 +57,17 @@ func TestGetLastQuote_EmptyStore(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.JSONEq(t, `{"code":404,"message":"not found"}`, rec.Body.String())
+}
+
+func TestRequestQuoteUpdate_InvalidPair(t *testing.T) {
+	h := setup()
+	body := map[string]string{"pair": "eur/usd"}
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/quotes/updates", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.JSONEq(t, `{"code":400,"message":"invalid pair format (e.g. EUR/USD)"}`, rec.Body.String())
 }

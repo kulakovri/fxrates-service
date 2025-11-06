@@ -7,6 +7,7 @@ import (
 
 	"fxrates-service/internal/infrastructure/http/openapi"
 	"fxrates-service/internal/infrastructure/logx"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -26,6 +27,11 @@ func NewRouter(s openapi.ServerInterface) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
+	})
+
+	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("READY"))
 	})
 
 	openapi.HandlerFromMux(s, r)

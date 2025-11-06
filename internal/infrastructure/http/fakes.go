@@ -19,11 +19,11 @@ type fakeQuoteRepo struct {
 
 func (f *fakeQuoteRepo) GetLast(_ context.Context, pair string) (domain.Quote, error) {
 	if f.store == nil {
-		return domain.Quote{}, ErrNotFound
+		return domain.Quote{}, application.ErrNotFound
 	}
 	q, ok := f.store[pair]
 	if !ok {
-		return domain.Quote{}, ErrNotFound
+		return domain.Quote{}, application.ErrNotFound
 	}
 	return q, nil
 }
@@ -51,11 +51,11 @@ func (f *fakeUpdateJobRepo) CreateQueued(_ context.Context, pair string, _ *stri
 
 func (f *fakeUpdateJobRepo) GetByID(_ context.Context, id string) (domain.QuoteUpdate, error) {
 	if f.jobs == nil {
-		return domain.QuoteUpdate{}, ErrNotFound
+		return domain.QuoteUpdate{}, application.ErrNotFound
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return domain.QuoteUpdate{}, ErrNotFound
+		return domain.QuoteUpdate{}, application.ErrNotFound
 	}
 	return j, nil
 }
@@ -66,7 +66,7 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return ErrNotFound
+		return application.ErrNotFound
 	}
 	j.Status = st
 	j.Error = errMsg

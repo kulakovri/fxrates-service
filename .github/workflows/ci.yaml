@@ -42,6 +42,9 @@ jobs:
       - name: Unit tests (race)
         run: go test ./... -race -count=1
 
+      - name: Build binary (ensure compiles)
+        run: go build -o /tmp/fxrates ./cmd/api
+
       - name: Check OpenAPI codegen up-to-date
         if: ${{ always() }}
         shell: bash
