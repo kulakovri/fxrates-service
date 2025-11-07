@@ -8,24 +8,33 @@ import (
 	"syscall"
 	"time"
 
+	"fxrates-service/internal/application"
 	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/logx"
+	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/worker"
 
+	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
+func init() { _ = godotenv.Load() }
+
 type Config struct {
-	Port     string
-	LogLevel string
-	Env      string
+	Port        string
+	LogLevel    string
+	Env         string
+	Storage     string
+	DatabaseURL string
 }
 
 func loadConfig() Config {
 	return Config{
-		Port:     getenv("PORT", "8080"),
-		LogLevel: getenv("LOG_LEVEL", "info"),
-		Env:      getenv("ENV", "local"),
+		Port:        getenv("PORT", "8080"),
+		LogLevel:    getenv("LOG_LEVEL", "info"),
+		Env:         getenv("ENV", "local"),
+		Storage:     getenv("STORAGE", "inmem"),
+		DatabaseURL: getenv("DATABASE_URL", ""),
 	}
 }
 
@@ -42,9 +51,34 @@ func main() {
 	cfg := loadConfig()
 	addr := ":" + cfg.Port
 
-	// Setup HTTP server via generated router
-	svc, quoteRepo, jobRepo, provider := httpserver.NewInMemoryService()
+	// Setup storage
+	var (
+		quoteRepo application.QuoteRepo
+		jobRepo   application.UpdateJobRepo
+		provider  application.RateProvider
+	)
+	var pingFn func(context.Context) error
+	if cfg.Storage == "pg" {
+		db, err := pg.Connect(ctx, cfg.DatabaseURL)
+		if err != nil {
+			logger.Fatal("pg connect", zap.Error(err))
+		}
+		if err := pg.RunMigrations(ctx, db); err != nil {
+			logger.Fatal("migrate", zap.Error(err))
+		}
+		quoteRepo = pg.NewQuoteRepo(db)
+		jobRepo = pg.NewUpdateJobRepo(db)
+		provider = httpserver.NewFakeRateProvider()
+		pingFn = db.Ping
+	} else {
+		quoteRepo, jobRepo, provider = httpserver.NewInMemoryRepos()
+	}
+
+	svc := application.NewFXRatesService(quoteRepo, jobRepo, provider)
 	srv := httpserver.NewServer(svc)
+	if pingFn != nil {
+		srv.SetReadyCheck(pingFn)
+	}
 	mux := httpserver.NewRouter(srv)
 
 	// Start in-memory worker

@@ -112,3 +112,12 @@ func NewInMemoryService() (*application.FXRatesService, *fakeQuoteRepo, *fakeUpd
 	rp := fakeRateProvider{}
 	return application.NewFXRatesService(qr, ur, rp), qr, ur, rp
 }
+
+func NewInMemoryRepos() (application.QuoteRepo, application.UpdateJobRepo, application.RateProvider) {
+	qr := &fakeQuoteRepo{store: map[string]domain.Quote{}}
+	ur := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
+	rp := fakeRateProvider{}
+	return qr, ur, rp
+}
+
+func NewFakeRateProvider() application.RateProvider { return fakeRateProvider{} }
