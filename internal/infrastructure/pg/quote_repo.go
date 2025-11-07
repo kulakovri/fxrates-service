@@ -29,3 +29,12 @@ func (r *QuoteRepo) Upsert(ctx context.Context, q domain.Quote) error {
 	_, err := r.db.Pool.Exec(ctx, up, q.Pair, q.Price, q.UpdatedAt)
 	return err
 }
+
+func (r *QuoteRepo) AppendHistory(ctx context.Context, h domain.QuoteHistory) error {
+	_, err := r.db.Pool.Exec(ctx, `
+        INSERT INTO quotes_history(pair, price, quoted_at, source, update_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (pair, quoted_at, source) DO NOTHING
+    `, h.Pair, h.Price, h.QuotedAt, h.Source, h.UpdateID)
+	return err
+}

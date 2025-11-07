@@ -9,6 +9,7 @@ import (
 type QuoteRepo interface {
 	GetLast(ctx context.Context, pair string) (domain.Quote, error)
 	Upsert(ctx context.Context, q domain.Quote) error
+	AppendHistory(ctx context.Context, q domain.QuoteHistory) error
 }
 
 type UpdateJobRepo interface {

@@ -42,6 +42,10 @@ func (f *fakeQuoteRepo) Upsert(_ context.Context, q domain.Quote) error {
 	return nil
 }
 
+func (f *fakeQuoteRepo) AppendHistory(_ context.Context, _ domain.QuoteHistory) error {
+	return nil
+}
+
 type fakeUpdateJobRepo struct {
 	mu   sync.RWMutex
 	jobs map[string]domain.QuoteUpdate
