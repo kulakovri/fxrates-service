@@ -107,10 +107,6 @@ func BuildWorker(repos Repos) application.Worker {
 
 // BuildRedis builds the idempotency store if enabled (defaults to redis; falls back to Noop).
 func BuildRedis() (Services, func(), error) {
-	use := getenv("IDEMPOTENCY_BACKEND", "redis") // or "none"
-	if use != "redis" {
-		return Services{Idem: application.NoopIdempotency{}}, func() {}, nil
-	}
 	addr := getenv("REDIS_ADDR", "localhost:6379")
 	pass := getenv("REDIS_PASSWORD", "")
 	db := atoiDef(getenv("REDIS_DB", "0"), 0)
