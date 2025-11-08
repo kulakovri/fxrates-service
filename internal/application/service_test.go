@@ -29,6 +29,21 @@ func Test_RequestQuoteUpdate(t *testing.T) {
 	require.Equal(t, domain.QuoteUpdateStatusQueued, u.jobs["update-1"].Status)
 }
 
+func Test_RequestQuoteUpdate_UnsupportedPair(t *testing.T) {
+	t.Parallel()
+	svc := NewFXRatesService(
+		&fakeQuoteRepo{store: map[string]domain.Quote{}},
+		&fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}},
+		&fakeRateProvider{},
+		NoopIdempotency{},
+	)
+
+	id, err := svc.RequestQuoteUpdate(context.Background(), "GBP/USD", strPtr("idem-1"))
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrUnsupportedPair)
+	require.Empty(t, id)
+}
+
 func Test_GetQuoteUpdate_Found(t *testing.T) {
 	t.Parallel()
 	u := &fakeUpdateJobRepo{
@@ -67,6 +82,15 @@ func Test_GetLastQuote(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.Pair("EUR/USD"), q.Pair)
 	require.InDelta(t, 1.1, q.Price, 1e-9)
+}
+
+func Test_GetLastQuote_UnsupportedPair(t *testing.T) {
+	t.Parallel()
+	svc := NewFXRatesService(&fakeQuoteRepo{}, &fakeUpdateJobRepo{}, &fakeRateProvider{}, NoopIdempotency{})
+
+	_, err := svc.GetLastQuote(context.Background(), "GBP/USD")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrUnsupportedPair)
 }
 
 func strPtr(s string) *string { return &s }

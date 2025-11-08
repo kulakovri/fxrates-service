@@ -49,6 +49,9 @@ func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, ratePro
 }
 
 func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, idem *string) (string, error) {
+	if !domain.ValidatePair(pair) {
+		return "", ErrUnsupportedPair
+	}
 	if idem == nil || *idem == "" {
 		return "", ErrBadRequest
 	}
@@ -71,5 +74,8 @@ func (s *FXRatesService) GetQuoteUpdate(ctx context.Context, id string) (domain.
 }
 
 func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.Quote, error) {
+	if !domain.ValidatePair(pair) {
+		return domain.Quote{}, ErrUnsupportedPair
+	}
 	return s.quoteRepo.GetLast(ctx, pair)
 }
