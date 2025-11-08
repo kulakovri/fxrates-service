@@ -18,6 +18,14 @@ docker run --rm -p 8080:8080 fxrates:dev
 
 ## Endpoints
 
+### Running PG integration tests
+
+These tests use Testcontainers and are opt-in:
+
+```bash
+TESTCONTAINERS=1 go test ./internal/infrastructure/pg -v
+```
+
 | Method | Path                         | Description         |
 |-------|------------------------------|---------------------|
 | GET   | /healthz                     | liveness probe      |

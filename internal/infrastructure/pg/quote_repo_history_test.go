@@ -2,7 +2,6 @@ package pg_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -11,30 +10,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAppendHistory(t *testing.T) {
-	t.Parallel()
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL not set; skipping PG test")
-	}
-	ctx := context.Background()
-	db, err := pg.Connect(ctx, dsn)
-	if err != nil {
-		t.Skip("pg not available: ", err)
-	}
-	defer db.Close()
-	if err := db.Ping(ctx); err != nil {
-		t.Skip("pg not reachable: ", err)
-	}
+func TestQuoteRepo_AppendHistory_WithContainer(t *testing.T) {
+	db, done := withPostgres(t)
+	defer done()
 
 	repo := pg.NewQuoteRepo(db)
-	record := domain.QuoteHistory{
+	ctx := context.Background()
+
+	h := domain.QuoteHistory{
 		Pair:     "EUR/USD",
-		Price:    1.2345,
+		Price:    1.234567,
 		QuotedAt: time.Now().UTC(),
 		Source:   "test",
 	}
+	require.NoError(t, repo.AppendHistory(ctx, h))
+	require.NoError(t, repo.AppendHistory(ctx, h))
+}
 
-	err = repo.AppendHistory(ctx, record)
+func TestQuoteRepo_UpsertAndGetLast_WithContainer(t *testing.T) {
+	db, done := withPostgres(t)
+	defer done()
+
+	repo := pg.NewQuoteRepo(db)
+	ctx := context.Background()
+
+	q := domain.Quote{Pair: "EUR/USD", Price: 1.111111, UpdatedAt: time.Now().UTC()}
+	require.NoError(t, repo.Upsert(ctx, q))
+
+	got, err := repo.GetLast(ctx, "EUR/USD")
 	require.NoError(t, err)
+	require.Equal(t, q.Pair, got.Pair)
+	require.InDelta(t, q.Price, got.Price, 1e-9)
 }
