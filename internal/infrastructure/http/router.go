@@ -17,7 +17,7 @@ type contextKey string
 
 const requestIDKey contextKey = "request_id"
 
-func NewRouter(s openapi.ServerInterface) http.Handler {
+func NewRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(requestID())
@@ -29,7 +29,13 @@ func NewRouter(s openapi.ServerInterface) http.Handler {
 		w.Write([]byte("OK"))
 	})
 
-	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if s.ping != nil {
+			if err := s.ping(r.Context()); err != nil {
+				writeError(w, http.StatusServiceUnavailable, "db not ready")
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("READY"))
 	})

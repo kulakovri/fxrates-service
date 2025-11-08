@@ -7,13 +7,15 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
-	"github.com/stretchr/testify/require"
 	"sync"
+
+	"github.com/stretchr/testify/require"
 )
 
 type memQuotes struct {
-	mu    sync.RWMutex
-	store map[string]domain.Quote
+	mu      sync.RWMutex
+	store   map[string]domain.Quote
+	history []domain.QuoteHistory // optional: to assert later
 }
 
 func (m *memQuotes) GetLast(context.Context, string) (domain.Quote, error) {
@@ -36,6 +38,13 @@ func (m *memQuotes) has(pair string) bool {
 	}
 	_, ok := m.store[pair]
 	return ok
+}
+
+func (m *memQuotes) AppendHistory(_ context.Context, h domain.QuoteHistory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.history = append(m.history, h)
+	return nil
 }
 
 type memJobs struct {
@@ -74,6 +83,24 @@ func (m *memJobs) status(id string) domain.QuoteUpdateStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.jobs[id].Status
+}
+
+// ClaimQueued implements application.UpdateJobRepo for tests.
+func (m *memJobs) ClaimQueued(_ context.Context, limit int) ([]struct{ ID, Pair string }, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []struct{ ID, Pair string }
+	for id, j := range m.jobs {
+		if j.Status == domain.QuoteUpdateStatusQueued {
+			j.Status = domain.QuoteUpdateStatusProcessing
+			m.jobs[id] = j
+			out = append(out, struct{ ID, Pair string }{ID: id, Pair: string(j.Pair)})
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 type memProvider struct{ price float64 }

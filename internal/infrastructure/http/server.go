@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,10 +13,13 @@ import (
 )
 
 type Server struct {
-	svc *application.FXRatesService
+	svc  *application.FXRatesService
+	ping func(context.Context) error
 }
 
 func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: svc} }
+
+func (s *Server) SetReadyCheck(fn func(context.Context) error) { s.ping = fn }
 
 func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, params openapi.RequestQuoteUpdateParams) {
 	var body openapi.QuoteUpdateRequest

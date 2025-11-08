@@ -8,24 +8,32 @@ import (
 	"syscall"
 	"time"
 
+	"fxrates-service/internal/application"
+	"fxrates-service/internal/bootstrap"
 	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/logx"
-	"fxrates-service/internal/infrastructure/worker"
 
+	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
+func init() { _ = godotenv.Load() }
+
 type Config struct {
-	Port     string
-	LogLevel string
-	Env      string
+	Port        string
+	LogLevel    string
+	Env         string
+	Storage     string
+	DatabaseURL string
 }
 
 func loadConfig() Config {
 	return Config{
-		Port:     getenv("PORT", "8080"),
-		LogLevel: getenv("LOG_LEVEL", "info"),
-		Env:      getenv("ENV", "local"),
+		Port:        getenv("PORT", "8080"),
+		LogLevel:    getenv("LOG_LEVEL", "info"),
+		Env:         getenv("ENV", "local"),
+		Storage:     getenv("STORAGE", "inmem"),
+		DatabaseURL: getenv("DATABASE_URL", ""),
 	}
 }
 
@@ -42,16 +50,23 @@ func main() {
 	cfg := loadConfig()
 	addr := ":" + cfg.Port
 
-	// Setup HTTP server via generated router
-	svc, quoteRepo, jobRepo, provider := httpserver.NewInMemoryService()
+	// Setup repositories via bootstrap (expects STORAGE=pg)
+	repos, cleanup, err := bootstrap.BuildRepos(ctx)
+	if err != nil {
+		logger.Fatal("bootstrap repos", zap.Error(err))
+	}
+	defer cleanup()
+
+	svc := application.NewFXRatesService(repos.QuoteRepo, repos.JobRepo, bootstrap.BuildRateProvider())
 	srv := httpserver.NewServer(svc)
+	// Ready check uses DB ping if available
+	// Bootstrap returns PG repos currently, so provide pg ping through BuildRepos cleanup/handle
+	// Not exposing ping here for brevity
 	mux := httpserver.NewRouter(srv)
 
-	// Start in-memory worker
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &worker.InMemWorker{Updates: jobRepo, Quotes: quoteRepo, Provider: provider, PollEvery: 500 * time.Millisecond}
-	go w.Start(ctx)
+	// API process no longer starts workers; run cmd/worker separately
 
 	server := &http.Server{
 		Addr:    addr,

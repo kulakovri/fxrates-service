@@ -42,6 +42,10 @@ func (f *fakeQuoteRepo) Upsert(_ context.Context, q domain.Quote) error {
 	return nil
 }
 
+func (f *fakeQuoteRepo) AppendHistory(_ context.Context, _ domain.QuoteHistory) error {
+	return nil
+}
+
 type fakeUpdateJobRepo struct {
 	mu   sync.RWMutex
 	jobs map[string]domain.QuoteUpdate
@@ -100,6 +104,24 @@ func (f *fakeUpdateJobRepo) ListQueuedIDs() []string {
 	return ids
 }
 
+func (f *fakeUpdateJobRepo) ClaimQueued(_ context.Context, limit int) ([]struct{ ID, Pair string }, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []struct{ ID, Pair string }
+	for id, j := range f.jobs {
+		if j.Status == domain.QuoteUpdateStatusQueued {
+			// claim
+			j.Status = domain.QuoteUpdateStatusProcessing
+			f.jobs[id] = j
+			out = append(out, struct{ ID, Pair string }{ID: id, Pair: string(j.Pair)})
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 type fakeRateProvider struct{}
 
 func (fakeRateProvider) Get(_ context.Context, pair string) (domain.Quote, error) {
@@ -112,3 +134,12 @@ func NewInMemoryService() (*application.FXRatesService, *fakeQuoteRepo, *fakeUpd
 	rp := fakeRateProvider{}
 	return application.NewFXRatesService(qr, ur, rp), qr, ur, rp
 }
+
+func NewInMemoryRepos() (application.QuoteRepo, application.UpdateJobRepo, application.RateProvider) {
+	qr := &fakeQuoteRepo{store: map[string]domain.Quote{}}
+	ur := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
+	rp := fakeRateProvider{}
+	return qr, ur, rp
+}
+
+func NewFakeRateProvider() application.RateProvider { return fakeRateProvider{} }

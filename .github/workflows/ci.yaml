@@ -15,7 +15,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version: '1.23.x'
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -74,5 +74,19 @@ jobs:
           context: .
           push: false
           tags: fxrates-service:ci
+
+  pg-integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Run PG integration tests (Testcontainers)
+        env:
+          TESTCONTAINERS: "1"
+        run: go test ./internal/infrastructure/pg -v
 
 
