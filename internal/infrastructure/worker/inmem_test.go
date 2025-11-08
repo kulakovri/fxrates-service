@@ -85,6 +85,24 @@ func (m *memJobs) status(id string) domain.QuoteUpdateStatus {
 	return m.jobs[id].Status
 }
 
+// ClaimQueued implements application.UpdateJobRepo for tests.
+func (m *memJobs) ClaimQueued(_ context.Context, limit int) ([]struct{ ID, Pair string }, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []struct{ ID, Pair string }
+	for id, j := range m.jobs {
+		if j.Status == domain.QuoteUpdateStatusQueued {
+			j.Status = domain.QuoteUpdateStatusProcessing
+			m.jobs[id] = j
+			out = append(out, struct{ ID, Pair string }{ID: id, Pair: string(j.Pair)})
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 type memProvider struct{ price float64 }
 
 func (p *memProvider) Get(context.Context, string) (domain.Quote, error) {

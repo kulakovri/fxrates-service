@@ -83,6 +83,24 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 	return nil
 }
 
+func (f *fakeUpdateJobRepo) ClaimQueued(ctx context.Context, limit int) ([]struct{ ID, Pair string }, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []struct{ ID, Pair string }
+	for id, j := range f.jobs {
+		if j.Status == domain.QuoteUpdateStatusQueued {
+			j.Status = domain.QuoteUpdateStatusProcessing
+			f.jobs[id] = j
+			out = append(out, struct{ ID, Pair string }{ID: id, Pair: string(j.Pair)})
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 type fakeRateProvider struct {
 	out domain.Quote
 	err error

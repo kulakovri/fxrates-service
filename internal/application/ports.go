@@ -16,6 +16,7 @@ type UpdateJobRepo interface {
 	CreateQueued(ctx context.Context, pair string, idem *string) (string, error)
 	GetByID(ctx context.Context, id string) (domain.QuoteUpdate, error)
 	UpdateStatus(ctx context.Context, id string, status domain.QuoteUpdateStatus, errMsg *string) error
+	ClaimQueued(ctx context.Context, limit int) ([]struct{ ID, Pair string }, error)
 }
 
 type RateProvider interface {

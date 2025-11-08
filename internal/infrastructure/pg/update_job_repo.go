@@ -98,3 +98,35 @@ func (r *UpdateJobRepo) UpdateStatus(ctx context.Context, id string, st domain.Q
 	}
 	return nil
 }
+
+func (r *UpdateJobRepo) ClaimQueued(ctx context.Context, limit int) ([]struct{ ID, Pair string }, error) {
+	const q = `
+      WITH cte AS (
+        SELECT id
+        FROM quote_updates
+        WHERE status = 'queued'
+        ORDER BY requested_at
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE quote_updates q
+      SET status = 'processing'
+      FROM cte
+      WHERE q.id = cte.id
+      RETURNING q.id, q.pair;
+    `
+	rows, err := r.db.Pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []struct{ ID, Pair string }
+	for rows.Next() {
+		var id, pair string
+		if err := rows.Scan(&id, &pair); err != nil {
+			return nil, err
+		}
+		out = append(out, struct{ ID, Pair string }{ID: id, Pair: pair})
+	}
+	return out, rows.Err()
+}

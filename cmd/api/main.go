@@ -81,11 +81,22 @@ func main() {
 	}
 	mux := httpserver.NewRouter(srv)
 
-	// Start in-memory worker
+	// Optional background worker
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &worker.InMemWorker{Updates: jobRepo, Quotes: quoteRepo, Provider: provider, PollEvery: 500 * time.Millisecond}
-	go w.Start(ctx)
+	workerEnabled := getenv("WORKER_ENABLED", "false") == "true"
+	workerType := getenv("WORKER_TYPE", "db")
+	if workerEnabled && workerType == "db" && cfg.Storage == "pg" {
+		dbw := &worker.DbWorker{
+			Jobs:       jobRepo,
+			Quotes:     quoteRepo,
+			Provider:   provider,
+			PollEvery:  250 * time.Millisecond,
+			BatchLimit: 10,
+			Log:        logger,
+		}
+		go dbw.Start(ctx)
+	}
 
 	server := &http.Server{
 		Addr:    addr,
