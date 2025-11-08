@@ -34,3 +34,38 @@ TESTCONTAINERS=1 go test ./internal/infrastructure/pg -v
 | GET   | /quotes/updates/{id}         | check status        |
 | GET   | /quotes/last?pair=EUR/USD    | get last quote      |
 
+## Quick test (curl)
+
+Health:
+
+```bash
+curl -sS http://localhost:8080/healthz
+```
+
+Readiness:
+
+```bash
+curl -sS http://localhost:8080/readyz
+```
+
+Queue an update (EUR/USD):
+
+```bash
+curl -sS -X POST http://localhost:8080/quotes/updates \
+  -H 'Content-Type: application/json' \
+  -H 'X-Idempotency-Key: demo-1' \
+  -d '{"pair":"EUR/USD"}'
+```
+
+Check update status (replace <id> with the value from the previous response):
+
+```bash
+curl -sS http://localhost:8080/quotes/updates/<id>
+```
+
+Get the last quote:
+
+```bash
+curl -sS 'http://localhost:8080/quotes/last?pair=EUR/USD'
+```
+
