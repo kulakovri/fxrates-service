@@ -62,7 +62,11 @@ func main() {
 		logger.Fatal("bootstrap redis", zap.Error(err))
 	}
 	defer closeRedis()
-	svc := application.NewFXRatesService(repos.QuoteRepo, repos.JobRepo, bootstrap.BuildRateProvider(), services.Idem)
+	rateProvider, err := bootstrap.BuildRateProvider()
+	if err != nil {
+		logger.Fatal("bootstrap rate provider", zap.Error(err))
+	}
+	svc := application.NewFXRatesService(repos.QuoteRepo, repos.JobRepo, rateProvider, services.Idem)
 	srv := httpserver.NewServer(svc)
 	// Ready check uses DB ping if available
 	// Bootstrap returns PG repos currently, so provide pg ping through BuildRepos cleanup/handle

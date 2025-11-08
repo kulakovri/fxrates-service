@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -13,7 +14,9 @@ import (
 	"fxrates-service/internal/infrastructure/provider"
 	redisstore "fxrates-service/internal/infrastructure/redis"
 	"fxrates-service/internal/infrastructure/worker"
+
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 type Repos struct {
@@ -76,14 +79,20 @@ func BuildRepos(ctx context.Context) (Repos, func(), error) {
 	}
 }
 
-// BuildRateProvider returns a provider instance (fake for now).
-func BuildRateProvider() application.RateProvider {
+// BuildRateProvider returns a provider instance based on env configuration.
+func BuildRateProvider() (application.RateProvider, error) {
 	switch getenv("PROVIDER", "fake") {
-	case "http":
-		// TODO: add real HTTP provider when ready
-		return provider.NewFake(1.2345)
+	case "exchangeratesapi":
+		base := getenv("EXCHANGE_API_BASE", "https://api.exchangeratesapi.io")
+		key := getenv("EXCHANGE_API_KEY", "")
+		client := &http.Client{Timeout: 4 * time.Second}
+		return &provider.ExchangeRatesAPIProvider{
+			BaseURL: base,
+			APIKey:  key,
+			Client:  client,
+		}, nil
 	default:
-		return provider.NewFake(1.2345)
+		return provider.NewFake(1.2345), nil
 	}
 }
 
@@ -92,10 +101,15 @@ func BuildWorker(repos Repos) application.Worker {
 	log := logx.L()
 	switch getenv("WORKER_TYPE", "db") {
 	case "db":
+		rateProvider, err := BuildRateProvider()
+		if err != nil {
+			log.Error("failed to build rate provider", zap.Error(err))
+			return nil
+		}
 		return &worker.DbWorker{
 			Jobs:       repos.JobRepo,
 			Quotes:     repos.QuoteRepo,
-			Provider:   BuildRateProvider(),
+			Provider:   rateProvider,
 			PollEvery:  durMS("WORKER_POLL_MS", 250),
 			BatchLimit: atoiDef(getenv("WORKER_BATCH_LIMIT", "10"), 10),
 			Log:        log,

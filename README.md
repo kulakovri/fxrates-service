@@ -2,6 +2,12 @@
 
 Asynchronous FX rates microservice in Go 1.22 (Clean Architecture).
 
+## Configuration
+
+- Supported currency pairs are limited to combinations of `USD`, `EUR`, and `MXN`. Requests outside this set return `ErrUnsupportedPair`.
+- The `exchangeratesapi` provider computes cross rates from the API's EUR base so it works even on plans that disallow changing the base.
+- Configure provider credentials via `PROVIDER=exchangeratesapi`, `EXCHANGE_API_BASE=https://api.exchangeratesapi.io`, and `EXCHANGE_API_KEY=<your-key>`.
+
 ## Run
 
 ```bash
