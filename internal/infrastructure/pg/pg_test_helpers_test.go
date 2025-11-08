@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"fxrates-service/internal/infrastructure/pg"
+
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
