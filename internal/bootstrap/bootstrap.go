@@ -11,12 +11,18 @@ import (
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/provider"
+	redisstore "fxrates-service/internal/infrastructure/redis"
 	"fxrates-service/internal/infrastructure/worker"
+	"github.com/redis/go-redis/v9"
 )
 
 type Repos struct {
 	QuoteRepo application.QuoteRepo
 	JobRepo   application.UpdateJobRepo
+}
+
+type Services struct {
+	Idem application.IdempotencyStore
 }
 
 func getenv(key, def string) string {
@@ -97,4 +103,20 @@ func BuildWorker(repos Repos) application.Worker {
 	default:
 		return nil
 	}
+}
+
+// BuildRedis builds the idempotency store if enabled (defaults to redis; falls back to Noop).
+func BuildRedis() (Services, func(), error) {
+	use := getenv("IDEMPOTENCY_BACKEND", "redis") // or "none"
+	if use != "redis" {
+		return Services{Idem: application.NoopIdempotency{}}, func() {}, nil
+	}
+	addr := getenv("REDIS_ADDR", "localhost:6379")
+	pass := getenv("REDIS_PASSWORD", "")
+	db := atoiDef(getenv("REDIS_DB", "0"), 0)
+	ttl := durMS("IDEMPOTENCY_TTL_MS", 24*60*60*1000)
+	rdb := redis.NewClient(&redis.Options{Addr: addr, Password: pass, DB: db})
+	store := redisstore.New(rdb, ttl)
+	cleanup := func() { _ = rdb.Close() }
+	return Services{Idem: store}, cleanup, nil
 }

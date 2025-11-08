@@ -17,6 +17,7 @@ func Test_RequestQuoteUpdate(t *testing.T) {
 		&fakeQuoteRepo{store: map[string]domain.Quote{}},
 		u,
 		&fakeRateProvider{},
+		NoopIdempotency{},
 		WithClock(func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }),
 		WithIDGen(func() string { return "update-1" }),
 	)
@@ -35,7 +36,7 @@ func Test_GetQuoteUpdate_Found(t *testing.T) {
 			"update-1": {ID: "update-1", Pair: "EUR/USD", Status: domain.QuoteUpdateStatusQueued},
 		},
 	}
-	svc := NewFXRatesService(&fakeQuoteRepo{}, u, &fakeRateProvider{})
+	svc := NewFXRatesService(&fakeQuoteRepo{}, u, &fakeRateProvider{}, NoopIdempotency{})
 
 	got, err := svc.GetQuoteUpdate(context.Background(), "update-1")
 	require.NoError(t, err)
@@ -46,7 +47,7 @@ func Test_GetQuoteUpdate_Found(t *testing.T) {
 func Test_GetQuoteUpdate_NotFound(t *testing.T) {
 	t.Parallel()
 	u := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
-	svc := NewFXRatesService(&fakeQuoteRepo{}, u, &fakeRateProvider{})
+	svc := NewFXRatesService(&fakeQuoteRepo{}, u, &fakeRateProvider{}, NoopIdempotency{})
 
 	_, err := svc.GetQuoteUpdate(context.Background(), "nope")
 	require.Error(t, err)
@@ -60,7 +61,7 @@ func Test_GetLastQuote(t *testing.T) {
 			"EUR/USD": {Pair: "EUR/USD", Price: 1.1, UpdatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
-	svc := NewFXRatesService(qr, &fakeUpdateJobRepo{}, &fakeRateProvider{})
+	svc := NewFXRatesService(qr, &fakeUpdateJobRepo{}, &fakeRateProvider{}, NoopIdempotency{})
 
 	q, err := svc.GetLastQuote(context.Background(), "EUR/USD")
 	require.NoError(t, err)

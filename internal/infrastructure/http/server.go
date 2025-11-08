@@ -36,9 +36,23 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
 		return
 	}
-	id, err := s.svc.RequestQuoteUpdate(r.Context(), body.Pair, params.XIdempotencyKey)
+	idem := r.Header.Get("X-Idempotency-Key")
+	if idem == "" {
+		writeError(w, http.StatusBadRequest, "X-Idempotency-Key is required")
+		return
+	}
+	id, err := s.svc.RequestQuoteUpdate(r.Context(), body.Pair, &idem)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		switch {
+		case errors.Is(err, application.ErrBadRequest):
+			writeError(w, http.StatusBadRequest, "bad request")
+			return
+		case errors.Is(err, application.ErrConflict):
+			writeError(w, http.StatusConflict, "conflict")
+			return
+		default:
+			writeError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 	resp := openapi.QuoteUpdateResponse{UpdateId: id}
