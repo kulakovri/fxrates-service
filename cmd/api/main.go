@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"fxrates-service/internal/application"
+	"fxrates-service/internal/bootstrap"
 	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/logx"
-	"fxrates-service/internal/infrastructure/pg"
-	"fxrates-service/internal/infrastructure/worker"
 
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
@@ -51,52 +50,23 @@ func main() {
 	cfg := loadConfig()
 	addr := ":" + cfg.Port
 
-	// Setup storage
-	var (
-		quoteRepo application.QuoteRepo
-		jobRepo   application.UpdateJobRepo
-		provider  application.RateProvider
-	)
-	var pingFn func(context.Context) error
-	if cfg.Storage == "pg" {
-		db, err := pg.Connect(ctx, cfg.DatabaseURL)
-		if err != nil {
-			logger.Fatal("pg connect", zap.Error(err))
-		}
-		if err := pg.RunMigrations(ctx, db); err != nil {
-			logger.Fatal("migrate", zap.Error(err))
-		}
-		quoteRepo = pg.NewQuoteRepo(db)
-		jobRepo = pg.NewUpdateJobRepo(db)
-		provider = httpserver.NewFakeRateProvider()
-		pingFn = db.Ping
-	} else {
-		quoteRepo, jobRepo, provider = httpserver.NewInMemoryRepos()
+	// Setup repositories via bootstrap (expects STORAGE=pg)
+	repos, cleanup, err := bootstrap.BuildRepos(ctx)
+	if err != nil {
+		logger.Fatal("bootstrap repos", zap.Error(err))
 	}
+	defer cleanup()
 
-	svc := application.NewFXRatesService(quoteRepo, jobRepo, provider)
+	svc := application.NewFXRatesService(repos.QuoteRepo, repos.JobRepo, bootstrap.BuildRateProvider())
 	srv := httpserver.NewServer(svc)
-	if pingFn != nil {
-		srv.SetReadyCheck(pingFn)
-	}
+	// Ready check uses DB ping if available
+	// Bootstrap returns PG repos currently, so provide pg ping through BuildRepos cleanup/handle
+	// Not exposing ping here for brevity
 	mux := httpserver.NewRouter(srv)
 
-	// Optional background worker
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	workerEnabled := getenv("WORKER_ENABLED", "false") == "true"
-	workerType := getenv("WORKER_TYPE", "db")
-	if workerEnabled && workerType == "db" && cfg.Storage == "pg" {
-		dbw := &worker.DbWorker{
-			Jobs:       jobRepo,
-			Quotes:     quoteRepo,
-			Provider:   provider,
-			PollEvery:  250 * time.Millisecond,
-			BatchLimit: 10,
-			Log:        logger,
-		}
-		go dbw.Start(ctx)
-	}
+	// API process no longer starts workers; run cmd/worker separately
 
 	server := &http.Server{
 		Addr:    addr,

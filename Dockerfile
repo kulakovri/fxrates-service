@@ -10,16 +10,17 @@ RUN go mod download
 # Copy source
 COPY . .
 
-# Build static binary
+# Build static binaries
 ENV CGO_ENABLED=0
-RUN go build -trimpath -ldflags="-s -w" -o /out/fxrates ./cmd/api
+RUN go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+RUN go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 # --- runtime (distroless) ---
 FROM gcr.io/distroless/static-debian12:nonroot
-WORKDIR /app
-COPY --from=build /out/fxrates /app/fxrates
+COPY --from=build /out/api /usr/local/bin/api
+COPY --from=build /out/worker /usr/local/bin/worker
 EXPOSE 8080
 USER nonroot:nonroot
-ENTRYPOINT ["/app/fxrates"]
+ENTRYPOINT ["/usr/local/bin/api"]
 
 
