@@ -10,6 +10,9 @@ import (
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
 	"fxrates-service/internal/infrastructure/http/openapi"
+	"fxrates-service/internal/infrastructure/logx"
+
+	"go.uber.org/zap"
 )
 
 type Server struct {
@@ -51,6 +54,7 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 			writeError(w, http.StatusConflict, "conflict")
 			return
 		default:
+			logRequestError(r, "request quote update failed", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 		}
 		return
@@ -66,6 +70,7 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
+		logRequestError(r, "get quote update failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -90,6 +95,7 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
+		logRequestError(r, "get last quote failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -121,6 +127,20 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(apiError{Code: code, Message: msg})
+}
+
+func logRequestError(r *http.Request, msg string, err error) {
+	if err == nil {
+		return
+	}
+	rid, _ := r.Context().Value(requestIDKey).(string)
+	logx.L().Error(msg,
+		zap.Error(err),
+		zap.String("request_id", rid),
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.Stack("stacktrace"),
+	)
 }
 
 func mapStatus(s domain.QuoteUpdateStatus) openapi.QuoteUpdateDetailsStatus {
