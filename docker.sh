@@ -23,10 +23,10 @@ start_all() {
 }
 
 restart_stack() {
-  compose down --remove-orphans
-  docker image rm -f fxrates:dev >/dev/null 2>&1 || true
+  compose stop api worker
+  compose rm -f api worker >/dev/null 2>&1 || true
   build_image --no-cache
-  compose up -d
+  compose up -d api worker
 }
 
 case "${1:-start}" in
