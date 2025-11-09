@@ -23,6 +23,7 @@ services:
       STORAGE: "pg"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
       LOG_LEVEL: "info"
+      REDIS_ADDR: "redis:6379"
     ports:
       - "8080:8080"
 
@@ -39,6 +40,7 @@ services:
       WORKER_POLL_MS: "250"
       WORKER_BATCH_LIMIT: "10"
       PROVIDER: "fake"
+      REDIS_ADDR: "redis:6379"
     deploy:
       replicas: 3
 
