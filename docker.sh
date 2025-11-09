@@ -2,17 +2,31 @@
 set -euo pipefail
 
 COMPOSE_FILE="ops/docker/docker-compose.yml"
-COMPOSE_CMD=(docker compose -f "$COMPOSE_FILE")
 
-function start_all() {
-  "${COMPOSE_CMD[@]}" up -d
+compose() {
+  docker compose -f "$COMPOSE_FILE" "$@"
 }
 
-function restart_api() {
-  "${COMPOSE_CMD[@]}" stop api worker
-  "${COMPOSE_CMD[@]}" rm --force api worker
-  "${COMPOSE_CMD[@]}" build --no-cache api worker
-  "${COMPOSE_CMD[@]}" up -d api worker
+build_image() {
+  local no_cache_flag=""
+  if [[ "${1:-}" == "--no-cache" ]]; then
+    no_cache_flag="--no-cache"
+  fi
+  docker build $no_cache_flag -t fxrates:dev .
+}
+
+start_all() {
+  if ! docker image inspect fxrates:dev >/dev/null 2>&1; then
+    build_image
+  fi
+  compose up -d
+}
+
+restart_stack() {
+  compose down --remove-orphans
+  docker image rm -f fxrates:dev >/dev/null 2>&1 || true
+  build_image --no-cache
+  compose up -d
 }
 
 case "${1:-start}" in
@@ -20,7 +34,7 @@ case "${1:-start}" in
     start_all
     ;;
   restart)
-    restart_api
+    restart_stack
     ;;
   *)
     echo "Usage: $0 [start|restart]"

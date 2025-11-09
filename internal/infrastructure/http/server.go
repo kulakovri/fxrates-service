@@ -25,25 +25,35 @@ func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: sv
 func (s *Server) SetReadyCheck(fn func(context.Context) error) { s.ping = fn }
 
 func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, params openapi.RequestQuoteUpdateParams) {
+	log := loggerForRequest(r)
 	var body openapi.QuoteUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		log.Warn("request_quote_update.decode_failed", zap.Error(err))
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	if body.Pair == "" {
+		log.Warn("request_quote_update.missing_pair")
 		writeError(w, http.StatusBadRequest, "pair is required")
 		return
 	}
 	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
 	if !rePair.MatchString(body.Pair) {
+		log.Warn("request_quote_update.invalid_pair_format", zap.String("pair", body.Pair))
 		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
 		return
 	}
 	idem := r.Header.Get("X-Idempotency-Key")
 	if idem == "" {
+		log.Warn("request_quote_update.missing_idem")
 		writeError(w, http.StatusBadRequest, "X-Idempotency-Key is required")
 		return
 	}
+	log = log.With(
+		zap.String("pair", body.Pair),
+		zap.String("idempotency_key", idem),
+	)
+	log.Info("request_quote_update.call_service")
 	id, err := s.svc.RequestQuoteUpdate(r.Context(), body.Pair, &idem)
 	if err != nil {
 		switch {
@@ -59,14 +69,18 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		}
 		return
 	}
+	log.Info("request_quote_update.queued", zap.String("update_id", id))
 	resp := openapi.QuoteUpdateResponse{UpdateId: id}
 	writeJSON(w, http.StatusAccepted, resp)
 }
 
 func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id string) {
+	log := loggerForRequest(r).With(zap.String("update_id", id))
+	log.Info("get_quote_update.call_service")
 	upd, err := s.svc.GetQuoteUpdate(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, application.ErrNotFound) {
+			log.Info("get_quote_update.not_found")
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
@@ -74,6 +88,7 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	log.Info("get_quote_update.success", zap.String("status", string(upd.Status)))
 	resp := openapi.QuoteUpdateDetails{
 		UpdateId:  upd.ID,
 		Pair:      string(upd.Pair),
@@ -84,14 +99,18 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 }
 
 func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params openapi.GetLastQuoteParams) {
+	log := loggerForRequest(r).With(zap.String("pair", params.Pair))
 	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
 	if !rePair.MatchString(params.Pair) {
+		log.Warn("get_last_quote.invalid_pair_format")
 		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
 		return
 	}
+	log.Info("get_last_quote.call_service")
 	q, err := s.svc.GetLastQuote(r.Context(), params.Pair)
 	if err != nil {
 		if errors.Is(err, application.ErrNotFound) {
+			log.Info("get_last_quote.not_found")
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
@@ -99,6 +118,7 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	log.Info("get_last_quote.success", zap.Float64("price", q.Price))
 	var price *float32
 	if q.Price != 0 {
 		p := float32(q.Price)
@@ -133,13 +153,17 @@ func logRequestError(r *http.Request, msg string, err error) {
 	if err == nil {
 		return
 	}
-	rid, _ := r.Context().Value(requestIDKey).(string)
-	logx.L().Error(msg,
+	loggerForRequest(r).Error(msg,
 		zap.Error(err),
+	)
+}
+
+func loggerForRequest(r *http.Request) *zap.Logger {
+	rid, _ := r.Context().Value(requestIDKey).(string)
+	return logx.L().With(
 		zap.String("request_id", rid),
 		zap.String("method", r.Method),
 		zap.String("path", r.URL.Path),
-		zap.Stack("stacktrace"),
 	)
 }
 

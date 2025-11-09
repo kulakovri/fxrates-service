@@ -2,8 +2,11 @@ package logx
 
 import (
 	"context"
+	"os"
+	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -11,7 +14,22 @@ var (
 )
 
 func init() {
-	logger = zap.Must(zap.NewProduction())
+	cfg := zap.NewProductionConfig()
+	cfg.Sampling = nil
+	cfg.DisableStacktrace = true
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	if lvl, ok := os.LookupEnv("LOG_LEVEL"); ok {
+		if err := cfg.Level.UnmarshalText([]byte(strings.ToLower(lvl))); err == nil {
+			cfg.Level = cfg.Level
+		}
+	}
+
+	var err error
+	logger, err = cfg.Build(zap.AddCaller(), zap.AddCallerSkip(0))
+	if err != nil {
+		panic(err)
+	}
 }
 
 // L returns the package-level logger instance.

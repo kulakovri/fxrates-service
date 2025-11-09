@@ -11,6 +11,9 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
+	"fxrates-service/internal/infrastructure/logx"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -38,6 +41,10 @@ type xrLatestResp struct {
 }
 
 func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain.Quote, error) {
+	log := logx.L().With(
+		zap.String("provider", "exchangeratesapi"),
+		zap.String("pair", pair),
+	)
 	if p.BaseURL == "" || p.APIKey == "" {
 		return domain.Quote{}, errors.New("exchangeratesapi: missing configuration")
 	}
@@ -66,28 +73,34 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 		return domain.Quote{}, fmt.Errorf("exchangeratesapi: create request: %w", err)
 	}
 
+	log.Info("provider.request_sending", zap.String("url", u.String()))
 	client := p.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Error("provider.request_failed", zap.Error(err))
 		return domain.Quote{}, fmt.Errorf("exchangeratesapi: do request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Error("provider.unexpected_status", zap.Int("status", resp.StatusCode))
 		return domain.Quote{}, fmt.Errorf("exchangeratesapi: status %d", resp.StatusCode)
 	}
 
 	var body xrLatestResp
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		log.Error("provider.decode_failed", zap.Error(err))
 		return domain.Quote{}, fmt.Errorf("exchangeratesapi: decode response: %w", err)
 	}
 	if !body.Success {
 		if body.Error != nil {
+			log.Error("provider.api_error", zap.Int("code", body.Error.Code), zap.String("info", body.Error.Info))
 			return domain.Quote{}, fmt.Errorf("exchangeratesapi: %d %s", body.Error.Code, body.Error.Info)
 		}
+		log.Error("provider.unsuccessful_response")
 		return domain.Quote{}, errors.New("exchangeratesapi: unsuccessful response")
 	}
 
@@ -104,10 +117,12 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 
 	eurToBase, err := eurTo(baseCur)
 	if err != nil {
+		log.Error("provider.missing_base_rate", zap.Error(err))
 		return domain.Quote{}, err
 	}
 	eurToQuote, err := eurTo(quoteCur)
 	if err != nil {
+		log.Error("provider.missing_quote_rate", zap.Error(err))
 		return domain.Quote{}, err
 	}
 
@@ -132,9 +147,14 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 		updatedAt = time.Unix(body.Timestamp, 0).UTC()
 	}
 
-	return domain.Quote{
+	quote := domain.Quote{
 		Pair:      domain.Pair(pair),
 		Price:     price,
 		UpdatedAt: updatedAt,
-	}, nil
+	}
+	log.Info("provider.request_success",
+		zap.Float64("price", quote.Price),
+		zap.Time("updated_at", quote.UpdatedAt),
+	)
+	return quote, nil
 }
