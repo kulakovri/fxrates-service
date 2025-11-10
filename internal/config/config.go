@@ -65,7 +65,7 @@ func Load() Config {
 		GRPCAddr:        getEnv("GRPC_ADDR", ":9090"),
 		GRPCTarget:      getEnv("GRPC_TARGET", "localhost:9090"),
 		RequestTimeout:  time.Duration(atoiDef(getEnv("REQUEST_TIMEOUT_MS", "3000"), 3000)) * time.Millisecond,
-		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisAddr:       getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
 		RedisDB:         atoiDef(getEnv("REDIS_DB", "0"), 0),
 		RedisTTL:        time.Duration(atoiDef(getEnv("IDEMPOTENCY_TTL_MS", "86400000"), 86400000)) * time.Millisecond,
