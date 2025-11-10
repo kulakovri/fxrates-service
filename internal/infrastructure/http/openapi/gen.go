@@ -14,10 +14,17 @@ import (
 
 // Defines values for QuoteUpdateDetailsStatus.
 const (
-	Completed QuoteUpdateDetailsStatus = "completed"
-	Failed    QuoteUpdateDetailsStatus = "failed"
-	Pending   QuoteUpdateDetailsStatus = "pending"
+	Done       QuoteUpdateDetailsStatus = "done"
+	Failed     QuoteUpdateDetailsStatus = "failed"
+	Processing QuoteUpdateDetailsStatus = "processing"
+	Queued     QuoteUpdateDetailsStatus = "queued"
 )
+
+// Error defines model for Error.
+type Error struct {
+	Code    int32  `json:"code"`
+	Message string `json:"message"`
+}
 
 // LastQuote defines model for LastQuote.
 type LastQuote struct {
@@ -67,6 +74,18 @@ type QuoteUpdateResponse struct {
 	UpdateId string `json:"update_id"`
 }
 
+// BadRequest defines model for BadRequest.
+type BadRequest = Error
+
+// Conflict defines model for Conflict.
+type Conflict = Error
+
+// InternalError defines model for InternalError.
+type InternalError = Error
+
+// NotFound defines model for NotFound.
+type NotFound = Error
+
 // GetLastQuoteParams defines parameters for GetLastQuote.
 type GetLastQuoteParams struct {
 	// Pair Currency pair (e.g., USD/EUR)
@@ -76,7 +95,7 @@ type GetLastQuoteParams struct {
 // RequestQuoteUpdateParams defines parameters for RequestQuoteUpdate.
 type RequestQuoteUpdateParams struct {
 	// XIdempotencyKey Idempotency key for the request
-	XIdempotencyKey *string `json:"X-Idempotency-Key,omitempty"`
+	XIdempotencyKey string `json:"X-Idempotency-Key"`
 }
 
 // RequestQuoteUpdateJSONRequestBody defines body for RequestQuoteUpdate for application/json ContentType.
@@ -170,7 +189,7 @@ func (siw *ServerInterfaceWrapper) RequestQuoteUpdate(w http.ResponseWriter, r *
 
 	headers := r.Header
 
-	// ------------- Optional header parameter "X-Idempotency-Key" -------------
+	// ------------- Required header parameter "X-Idempotency-Key" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("X-Idempotency-Key")]; found {
 		var XIdempotencyKey string
 		n := len(valueList)
@@ -179,14 +198,18 @@ func (siw *ServerInterfaceWrapper) RequestQuoteUpdate(w http.ResponseWriter, r *
 			return
 		}
 
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Idempotency-Key", valueList[0], &XIdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Idempotency-Key", valueList[0], &XIdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
 		if err != nil {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Idempotency-Key", Err: err})
 			return
 		}
 
-		params.XIdempotencyKey = &XIdempotencyKey
+		params.XIdempotencyKey = XIdempotencyKey
 
+	} else {
+		err := fmt.Errorf("Header parameter X-Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Idempotency-Key", Err: err})
+		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -9,7 +9,8 @@ package bootstrap
 import (
 	"context"
 	"fxrates-service/internal/application"
-	"fxrates-service/internal/infrastructure/http"
+	httpserver "fxrates-service/internal/infrastructure/http"
+
 	"github.com/google/wire"
 )
 

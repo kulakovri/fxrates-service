@@ -16,9 +16,9 @@ func Test_mapStatus(t *testing.T) {
 		in  domain.QuoteUpdateStatus
 		out openapi.QuoteUpdateDetailsStatus
 	}{
-		{domain.QuoteUpdateStatusQueued, openapi.Pending},
-		{domain.QuoteUpdateStatusProcessing, openapi.Pending},
-		{domain.QuoteUpdateStatusDone, openapi.Completed},
+		{domain.QuoteUpdateStatusQueued, openapi.Queued},
+		{domain.QuoteUpdateStatusProcessing, openapi.Processing},
+		{domain.QuoteUpdateStatusDone, openapi.Done},
 		{domain.QuoteUpdateStatusFailed, openapi.Failed},
 	}
 	for _, c := range cases {

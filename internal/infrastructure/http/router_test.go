@@ -2,12 +2,14 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
 
 	"github.com/stretchr/testify/require"
@@ -78,6 +80,7 @@ func TestRequestQuoteUpdate_InvalidPair(t *testing.T) {
 	b, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/quotes/updates", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Idempotency-Key", "k-bad-format")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
@@ -138,8 +141,48 @@ func TestGetQuoteUpdate_WithPrice(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, "update-1", resp.UpdateID)
 	require.Equal(t, "EUR/USD", resp.Pair)
-	require.Equal(t, "completed", resp.Status)
+	require.Equal(t, "done", resp.Status)
 	require.NotNil(t, resp.Price)
 	require.InDelta(t, float64(*resp.Price), price, 1e-5)
 	require.Equal(t, ts, resp.UpdatedAt)
+}
+
+type memIdem struct{ seen map[string]bool }
+
+func (m *memIdem) TryReserve(_ context.Context, k string) (bool, error) {
+	if m.seen == nil {
+		m.seen = map[string]bool{}
+	}
+	if m.seen[k] {
+		return false, nil
+	}
+	m.seen[k] = true
+	return true, nil
+}
+
+func TestRequestQuoteUpdate_IdempotencyConflict_HTTP(t *testing.T) {
+	qr, ur, rp := NewInMemoryRepos()
+	idem := &memIdem{}
+	svc := application.NewFXRatesService(qr, ur, rp, idem)
+	srv := NewServer(svc)
+	h := NewRouter(srv)
+
+	body := map[string]string{"pair": "EUR/USD"}
+	b, _ := json.Marshal(body)
+	// First call should 202
+	req1 := httptest.NewRequest(http.MethodPost, "/quotes/updates", bytes.NewReader(b))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("X-Idempotency-Key", "k-dup")
+	rec1 := httptest.NewRecorder()
+	h.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusAccepted, rec1.Code)
+
+	// Second call should 409 conflict with JSON Error envelope
+	req2 := httptest.NewRequest(http.MethodPost, "/quotes/updates", bytes.NewReader(b))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("X-Idempotency-Key", "k-dup")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusConflict, rec2.Code)
+	require.JSONEq(t, `{"code":409,"message":"conflict"}`, rec2.Body.String())
 }

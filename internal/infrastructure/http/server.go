@@ -286,11 +286,13 @@ func loggerForRequest(r *http.Request) *zap.Logger {
 
 func mapStatus(s domain.QuoteUpdateStatus) openapi.QuoteUpdateDetailsStatus {
 	switch s {
+	case domain.QuoteUpdateStatusQueued:
+		return openapi.Queued
+	case domain.QuoteUpdateStatusProcessing:
+		return openapi.Processing
 	case domain.QuoteUpdateStatusDone:
-		return openapi.Completed
-	case domain.QuoteUpdateStatusFailed:
-		return openapi.Failed
+		return openapi.Done
 	default:
-		return openapi.Pending
+		return openapi.Failed
 	}
 }
