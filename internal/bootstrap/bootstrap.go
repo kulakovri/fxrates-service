@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	"fxrates-service/internal/application"
+	"fxrates-service/internal/config"
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/provider"
@@ -28,34 +27,14 @@ type Services struct {
 	Idem application.IdempotencyStore
 }
 
-func getenv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func atoiDef(s string, def int) int {
-	i, err := strconv.Atoi(s)
-	if err != nil || i <= 0 {
-		return def
-	}
-	return i
-}
-
-func durMS(key string, defMS int) time.Duration {
-	ms := atoiDef(getenv(key, fmt.Sprint(defMS)), defMS)
-	return time.Duration(ms) * time.Millisecond
-}
-
 // BuildRepos builds repositories based on STORAGE env ("pg" expected).
-func BuildRepos(ctx context.Context) (Repos, func(), error) {
+func BuildRepos(ctx context.Context, cfg config.Config) (Repos, func(), error) {
 	log := logx.L()
-	storage := getenv("STORAGE", "pg")
+	storage := cfg.Storage
 
 	switch storage {
 	case "pg":
-		dbURL := getenv("DATABASE_URL", "")
+		dbURL := cfg.DatabaseURL
 		if dbURL == "" {
 			return Repos{}, func() {}, fmt.Errorf("DATABASE_URL is required for STORAGE=pg")
 		}
@@ -80,11 +59,11 @@ func BuildRepos(ctx context.Context) (Repos, func(), error) {
 }
 
 // BuildRateProvider returns a provider instance based on env configuration.
-func BuildRateProvider() (application.RateProvider, error) {
-	switch getenv("PROVIDER", "fake") {
+func BuildRateProvider(cfg config.Config) (application.RateProvider, error) {
+	switch cfg.Provider {
 	case "exchangeratesapi":
-		base := getenv("EXCHANGE_API_BASE", "https://api.exchangeratesapi.io")
-		key := getenv("EXCHANGE_API_KEY", "")
+		base := cfg.ExchangeAPIBase
+		key := cfg.ExchangeAPIKey
 		client := &http.Client{Timeout: 4 * time.Second}
 		return &provider.ExchangeRatesAPIProvider{
 			BaseURL: base,
@@ -97,11 +76,11 @@ func BuildRateProvider() (application.RateProvider, error) {
 }
 
 // BuildWorker constructs an application.Worker based on WORKER_TYPE env.
-func BuildWorker(repos Repos) application.Worker {
+func BuildWorker(cfg config.Config, repos Repos) application.Worker {
 	log := logx.L()
-	switch getenv("WORKER_TYPE", "db") {
+	switch cfg.WorkerType {
 	case "db":
-		rateProvider, err := BuildRateProvider()
+		rateProvider, err := BuildRateProvider(cfg)
 		if err != nil {
 			log.Error("failed to build rate provider", zap.Error(err))
 			return nil
@@ -110,8 +89,8 @@ func BuildWorker(repos Repos) application.Worker {
 			Jobs:       repos.JobRepo,
 			Quotes:     repos.QuoteRepo,
 			Provider:   rateProvider,
-			PollEvery:  durMS("WORKER_POLL_MS", 250),
-			BatchLimit: atoiDef(getenv("WORKER_BATCH_LIMIT", "10"), 10),
+			PollEvery:  cfg.WorkerPoll,
+			BatchLimit: cfg.WorkerBatchSize,
 			Log:        log,
 		}
 	default:
@@ -120,11 +99,11 @@ func BuildWorker(repos Repos) application.Worker {
 }
 
 // BuildRedis builds the idempotency store if enabled (defaults to redis; falls back to Noop).
-func BuildRedis() (Services, func(), error) {
-	addr := getenv("REDIS_ADDR", "localhost:6379")
-	pass := getenv("REDIS_PASSWORD", "")
-	db := atoiDef(getenv("REDIS_DB", "0"), 0)
-	ttl := durMS("IDEMPOTENCY_TTL_MS", 24*60*60*1000)
+func BuildRedis(cfg config.Config) (Services, func(), error) {
+	addr := cfg.RedisAddr
+	pass := cfg.RedisPassword
+	db := cfg.RedisDB
+	ttl := cfg.RedisTTL
 	rdb := redis.NewClient(&redis.Options{Addr: addr, Password: pass, DB: db})
 	store := redisstore.New(rdb, ttl)
 	cleanup := func() { _ = rdb.Close() }

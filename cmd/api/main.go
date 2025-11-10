@@ -10,6 +10,7 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/bootstrap"
+	"fxrates-service/internal/config"
 	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/logx"
 
@@ -19,50 +20,25 @@ import (
 
 func init() { _ = godotenv.Load() }
 
-type Config struct {
-	Port        string
-	LogLevel    string
-	Env         string
-	Storage     string
-	DatabaseURL string
-}
-
-func loadConfig() Config {
-	return Config{
-		Port:        getenv("PORT", "8080"),
-		LogLevel:    getenv("LOG_LEVEL", "info"),
-		Env:         getenv("ENV", "local"),
-		Storage:     getenv("STORAGE", "inmem"),
-		DatabaseURL: getenv("DATABASE_URL", ""),
-	}
-}
-
-func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
 func main() {
 	ctx := context.Background()
 	logger := logx.L()
-	cfg := loadConfig()
+	cfg := config.Load()
 	addr := ":" + cfg.Port
 
 	// Setup repositories via bootstrap (expects STORAGE=pg)
-	repos, cleanup, err := bootstrap.BuildRepos(ctx)
+	repos, cleanup, err := bootstrap.BuildRepos(ctx, cfg)
 	if err != nil {
 		logger.Fatal("bootstrap repos", zap.Error(err))
 	}
 	defer cleanup()
 
-	services, closeRedis, err := bootstrap.BuildRedis()
+	services, closeRedis, err := bootstrap.BuildRedis(cfg)
 	if err != nil {
 		logger.Fatal("bootstrap redis", zap.Error(err))
 	}
 	defer closeRedis()
-	rateProvider, err := bootstrap.BuildRateProvider()
+	rateProvider, err := bootstrap.BuildRateProvider(cfg)
 	if err != nil {
 		logger.Fatal("bootstrap rate provider", zap.Error(err))
 	}

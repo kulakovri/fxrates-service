@@ -6,6 +6,7 @@ import (
 	"syscall"
 
 	"fxrates-service/internal/bootstrap"
+	"fxrates-service/internal/config"
 	"fxrates-service/internal/infrastructure/logx"
 	"go.uber.org/zap"
 )
@@ -15,13 +16,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	repos, cleanup, err := bootstrap.BuildRepos(ctx)
+	cfg := config.Load()
+
+	repos, cleanup, err := bootstrap.BuildRepos(ctx, cfg)
 	if err != nil {
 		log.Fatal("bootstrap repos", zap.Error(err))
 	}
 	defer cleanup()
 
-	w := bootstrap.BuildWorker(repos)
+	w := bootstrap.BuildWorker(cfg, repos)
 	if w == nil {
 		log.Fatal("no worker configured (WORKER_TYPE)")
 	}
