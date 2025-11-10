@@ -20,6 +20,7 @@ var infraSet = wire.NewSet(
 	ProvideIdempotency,
 	ProvideRateProvider,
 	ProvideFXRatesService,
+	ProvideGRPCRateClient,
 )
 
 // API injector: builds *httpserver.Server + Cleanup
@@ -31,11 +32,12 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	return nil, nil, nil
 }
 
-// Worker injector: builds application.Worker + Cleanup
-func InitWorker(ctx context.Context) (application.Worker, func(), error) {
+// Worker injector: builds application.Worker or gRPC server runner + Cleanup
+func InitWorker(ctx context.Context) (application.Worker, func(context.Context) error, func(), error) {
 	wire.Build(
 		infraSet,
 		ProvideWorker,
+		ProvideGRPCRateServerRunner,
 	)
-	return nil, nil, nil
+	return nil, nil, nil, nil
 }

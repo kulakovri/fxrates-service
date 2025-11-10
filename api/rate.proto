@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package fxrates.rate.v1;
+
+option go_package = "fxrates-service/internal/infrastructure/grpc/ratepb;ratepb";
+
+message FetchRequest {
+  string pair = 1;     // "EUR/USD"
+  string trace_id = 2; // from HTTP
+}
+
+message FetchResponse {
+  string pair = 1;
+  double price = 2;
+  string updated_at = 3; // RFC3339Nano
+}
+
+service RateService {
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+}
+
+
+

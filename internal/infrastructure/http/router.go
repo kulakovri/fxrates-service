@@ -16,11 +16,13 @@ import (
 type contextKey string
 
 const requestIDKey contextKey = "request_id"
+const traceIDKey contextKey = "trace_id"
 
 func NewRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(requestID())
+	r.Use(traceID())
 	r.Use(recoverer())
 	r.Use(accessLog())
 
@@ -56,6 +58,13 @@ func requestID() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func getTraceIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(traceIDKey).(string); ok {
+		return v
+	}
+	return ""
 }
 
 func recoverer() func(http.Handler) http.Handler {
@@ -100,13 +109,29 @@ func accessLog() func(http.Handler) http.Handler {
 			sr := &statusRecorder{ResponseWriter: w}
 			next.ServeHTTP(sr, r)
 			rid, _ := r.Context().Value(requestIDKey).(string)
+			tid, _ := r.Context().Value(traceIDKey).(string)
 			logx.L().Info("http_request",
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status", sr.status),
 				zap.String("request_id", rid),
+				zap.String("trace_id", tid),
 				zap.Duration("duration", time.Since(start)),
 			)
+		})
+	}
+}
+
+func traceID() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tid := r.Header.Get("X-Trace-Id")
+			if tid == "" {
+				tid = uuid.NewString()
+			}
+			w.Header().Set("X-Trace-Id", tid)
+			ctx := context.WithValue(r.Context(), traceIDKey, tid)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

@@ -6,9 +6,11 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
+	"fxrates-service/internal/infrastructure/logx"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 )
 
 type UpdateJobRepo struct{ db *DB }
@@ -20,9 +22,20 @@ func (r *UpdateJobRepo) CreateQueued(ctx context.Context, pair string, _ *string
 	const ins = `
         INSERT INTO quote_updates(id, pair, status)
         VALUES ($1, $2, 'queued')`
-	if _, err := r.db.Pool.Exec(ctx, ins, id, pair); err != nil {
+	log := logx.L().With(
+		zap.String("repo", "update_job"),
+		zap.String("operation", "CreateQueued"),
+		zap.String("sql", ins),
+		zap.String("id", id),
+		zap.String("pair", pair),
+	)
+	log.Info("sql.exec_start")
+	tag, err := r.db.Pool.Exec(ctx, ins, id, pair)
+	if err != nil {
+		log.Error("sql.exec_failed", zap.Error(err))
 		return "", err
 	}
+	log.Info("sql.exec_success", zap.Int64("rows_affected", int64(tag.RowsAffected())))
 	return id, nil
 }
 
@@ -30,14 +43,23 @@ func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpd
 	const q = `
         SELECT id::text, pair, status, error, COALESCE(completed_at, requested_at)
         FROM quote_updates WHERE id=$1`
+	log := logx.L().With(
+		zap.String("repo", "update_job"),
+		zap.String("operation", "GetByID"),
+		zap.String("sql", q),
+		zap.String("id", id),
+	)
+	log.Info("sql.query_start")
 	var out domain.QuoteUpdate
 	var errMsg *string
 	var status string
 	err := r.db.Pool.QueryRow(ctx, q, id).Scan(&out.ID, &out.Pair, &status, &errMsg, &out.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
+		log.Info("sql.query_no_rows")
 		return domain.QuoteUpdate{}, application.ErrNotFound
 	}
 	if err != nil {
+		log.Error("sql.query_failed", zap.Error(err))
 		return domain.QuoteUpdate{}, err
 	}
 	out.Error = errMsg
@@ -51,6 +73,10 @@ func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpd
 	default:
 		out.Status = domain.QuoteUpdateStatusFailed
 	}
+	log.Info("sql.query_success",
+		zap.String("pair", string(out.Pair)),
+		zap.String("status", string(out.Status)),
+	)
 	return out, nil
 }
 
@@ -72,13 +98,27 @@ func (r *UpdateJobRepo) UpdateStatus(ctx context.Context, id string, st domain.Q
             error=$3,
             completed_at = CASE WHEN $2 IN ('done','failed') THEN NOW() ELSE completed_at END
         WHERE id=$1`
-	ct, err := r.db.Pool.Exec(ctx, up, id, s, errMsg)
+	log := logx.L().With(
+		zap.String("repo", "update_job"),
+		zap.String("operation", "UpdateStatus"),
+		zap.String("sql", up),
+		zap.String("id", id),
+		zap.String("status", s),
+	)
+	if errMsg != nil {
+		log = log.With(zap.String("error", *errMsg))
+	}
+	log.Info("sql.exec_start")
+	tag, err := r.db.Pool.Exec(ctx, up, id, s, errMsg)
 	if err != nil {
+		log.Error("sql.exec_failed", zap.Error(err))
 		return err
 	}
-	if ct.RowsAffected() == 0 {
+	if tag.RowsAffected() == 0 {
+		log.Warn("sql.exec_no_rows")
 		return application.ErrNotFound
 	}
+	log.Info("sql.exec_success", zap.Int64("rows_affected", int64(tag.RowsAffected())))
 	return nil
 }
 
