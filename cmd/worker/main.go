@@ -11,13 +11,19 @@ import (
 func main() {
 	log := logx.L()
 	ctx := context.Background()
-	w, cleanup, err := bootstrap.InitWorker(ctx)
+	w, run, cleanup, err := bootstrap.InitWorker(ctx)
 	if err != nil {
 		log.Fatal("init worker", zap.Error(err))
 	}
 	defer cleanup()
-	if w == nil {
+	switch {
+	case run != nil:
+		if err := run(ctx); err != nil {
+			log.Fatal("grpc worker server exited", zap.Error(err))
+		}
+	case w != nil:
+		w.Start(ctx)
+	default:
 		log.Fatal("no worker configured (WORKER_TYPE)", zap.Error(err))
 	}
-	w.Start(ctx)
 }

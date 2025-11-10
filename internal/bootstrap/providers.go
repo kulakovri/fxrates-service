@@ -8,6 +8,8 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
+	rateclient "fxrates-service/internal/infrastructure/grpc/rateclient"
+	grpcserver "fxrates-service/internal/infrastructure/grpc/rateserver"
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/provider"
@@ -102,6 +104,32 @@ func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
 
 func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services) *application.FXRatesService {
 	return application.NewFXRatesService(r.QuoteRepo, r.JobRepo, rp, s.Idem)
+}
+
+// ProvideGRPCRateClient optionally dials the worker gRPC when WORKER_TYPE=grpc.
+func ProvideGRPCRateClient(cfg config.Config) (*rateclient.Client, func(), error) {
+	if cfg.WorkerType != "grpc" {
+		return nil, func() {}, nil
+	}
+	ctx := context.Background()
+	c, cleanup, err := rateclient.New(ctx, cfg.GRPCTarget)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return c, cleanup, nil
+}
+
+// ProvideGRPCRateServerRunner returns a runner to start the gRPC worker server when WORKER_TYPE=grpc.
+// The bool indicates whether the runner is enabled.
+func ProvideGRPCRateServerRunner(cfg config.Config, rp application.RateProvider, log *zap.Logger) (func(ctx context.Context) error, bool) {
+	if cfg.WorkerType != "grpc" {
+		return nil, false
+	}
+	addr := cfg.GRPCAddr
+	return func(ctx context.Context) error {
+		s := &grpcserver.Server{RP: rp, Log: log}
+		return grpcserver.RunServer(ctx, addr, s, log)
+	}, true
 }
 
 func ProvideWorker(r Repos, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {

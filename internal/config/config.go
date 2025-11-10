@@ -22,6 +22,10 @@ type Config struct {
 	WorkerType      string
 	WorkerPoll      time.Duration
 	WorkerBatchSize int
+	// gRPC
+	GRPCAddr       string
+	GRPCTarget     string
+	RequestTimeout time.Duration
 	// Redis (idempotency)
 	RedisAddr     string
 	RedisPassword string
@@ -58,6 +62,9 @@ func Load() Config {
 		WorkerType:      getEnv("WORKER_TYPE", "db"),
 		WorkerPoll:      time.Duration(atoiDef(getEnv("WORKER_POLL_MS", "250"), 250)) * time.Millisecond,
 		WorkerBatchSize: atoiDef(getEnv("WORKER_BATCH_LIMIT", "10"), 10),
+		GRPCAddr:        getEnv("GRPC_ADDR", ":9090"),
+		GRPCTarget:      getEnv("GRPC_TARGET", "localhost:9090"),
+		RequestTimeout:  time.Duration(atoiDef(getEnv("REQUEST_TIMEOUT_MS", "3000"), 3000)) * time.Millisecond,
 		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
 		RedisDB:         atoiDef(getEnv("REDIS_DB", "0"), 0),

@@ -24,6 +24,9 @@ services:
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
       LOG_LEVEL: "info"
       REDIS_ADDR: ${REDIS_ADDR}
+      WORKER_TYPE: "grpc" # db | grpc
+      GRPC_TARGET: "worker:9090"
+      REQUEST_TIMEOUT_MS: "3000"
     ports:
       - "8080:8080"
 
@@ -36,15 +39,18 @@ services:
     environment:
       STORAGE: "pg"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
-      WORKER_TYPE: "db"
+      WORKER_TYPE: "grpc" # db | grpc
       WORKER_POLL_MS: "250"
       WORKER_BATCH_LIMIT: "10"
       PROVIDER: "exchangeratesapi"
       EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
       EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
       REDIS_ADDR: ${REDIS_ADDR}
+      GRPC_ADDR: ":9090"
     deploy:
       replicas: 3
+    ports:
+      - "9090:9090"
 
   redis:
     image: redis:7-alpine
