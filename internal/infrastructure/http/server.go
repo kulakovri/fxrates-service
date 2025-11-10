@@ -81,6 +81,9 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		case errors.Is(err, application.ErrBadRequest):
 			writeError(w, http.StatusBadRequest, "bad request")
 			return
+		case errors.Is(err, application.ErrUnsupportedPair):
+			writeError(w, http.StatusBadRequest, "unsupported pair")
+			return
 		case errors.Is(err, application.ErrConflict):
 			writeError(w, http.StatusConflict, "conflict")
 			return
@@ -182,6 +185,11 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 		if errors.Is(err, application.ErrNotFound) {
 			log.Info("get_last_quote.not_found")
 			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		if errors.Is(err, application.ErrUnsupportedPair) {
+			log.Warn("get_last_quote.unsupported_pair")
+			writeError(w, http.StatusBadRequest, "unsupported pair")
 			return
 		}
 		logRequestError(r, "get last quote failed", err)

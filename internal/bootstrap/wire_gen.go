@@ -43,6 +43,10 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 		return nil, nil, err
 	}
 	server := httpserver.NewServer(fxRatesService)
+	// Set DB readiness check for /readyz
+	server.SetReadyCheck(func(ctx context.Context) error {
+		return db.Ping(ctx)
+	})
 	// Attach optional gRPC background client when in grpc mode
 	server.AttachGRPCBackground(repos.QuoteRepo, repos.JobRepo, grpcClient, config)
 	return server, func() {

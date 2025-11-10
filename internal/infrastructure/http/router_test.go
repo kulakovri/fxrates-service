@@ -84,6 +84,27 @@ func TestRequestQuoteUpdate_InvalidPair(t *testing.T) {
 	require.JSONEq(t, `{"code":400,"message":"invalid pair format (e.g. EUR/USD)"}`, rec.Body.String())
 }
 
+func TestRequestQuoteUpdate_UnsupportedPair_HTTP(t *testing.T) {
+	h := setup()
+	body := map[string]string{"pair": "GBP/USD"}
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/quotes/updates", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Idempotency-Key", "k2")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.JSONEq(t, `{"code":400,"message":"unsupported pair"}`, rec.Body.String())
+}
+
+func TestGetLastQuote_UnsupportedPair_HTTP(t *testing.T) {
+	h := setup()
+	req := httptest.NewRequest(http.MethodGet, "/quotes/last?pair=GBP/USD", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.JSONEq(t, `{"code":400,"message":"unsupported pair"}`, rec.Body.String())
+}
 func TestGetQuoteUpdate_WithPrice(t *testing.T) {
 	// Prepare in-memory service and pre-populate a completed update with price and timestamp
 	svc, _, ur, _ := NewInMemoryService()
