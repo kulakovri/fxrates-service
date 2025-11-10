@@ -16,7 +16,12 @@ type Client struct {
 }
 
 func New(ctx context.Context, target string) (*Client, func(), error) {
-	conn, err := grpc.DialContext(ctx, target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.DialContext(
+		ctx,
+		target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+	)
 	if err != nil {
 		return nil, nil, err
 	}

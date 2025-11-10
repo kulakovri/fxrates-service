@@ -63,7 +63,7 @@ func Load() Config {
 		WorkerPoll:      time.Duration(atoiDef(getEnv("WORKER_POLL_MS", "250"), 250)) * time.Millisecond,
 		WorkerBatchSize: atoiDef(getEnv("WORKER_BATCH_LIMIT", "10"), 10),
 		GRPCAddr:        getEnv("GRPC_ADDR", ":9090"),
-		GRPCTarget:      getEnv("GRPC_TARGET", "localhost:9090"),
+		GRPCTarget:      getEnv("GRPC_TARGET", "dns:///worker:9090"),
 		RequestTimeout:  time.Duration(atoiDef(getEnv("REQUEST_TIMEOUT_MS", "3000"), 3000)) * time.Millisecond,
 		RedisAddr:       getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword:   getEnv("REDIS_PASSWORD", ""),

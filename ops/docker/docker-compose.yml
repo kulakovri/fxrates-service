@@ -25,7 +25,7 @@ services:
       LOG_LEVEL: "info"
       REDIS_ADDR: ${REDIS_ADDR}
       WORKER_TYPE: "grpc" # db | grpc
-      GRPC_TARGET: "worker:9090"
+      GRPC_TARGET: "dns:///worker:9090"
       REQUEST_TIMEOUT_MS: "3000"
     ports:
       - "8080:8080"

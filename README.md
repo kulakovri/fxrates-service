@@ -22,6 +22,15 @@ docker build -t fxrates:dev .
 docker run --rm -p 8080:8080 fxrates:dev
 ```
 
+## gRPC worker mode and client-side load balancing
+
+When `WORKER_TYPE=grpc`, the API returns 202 immediately and performs the fetch via gRPC in the background, persisting the result to Postgres.
+
+- Worker listens on `GRPC_ADDR` (e.g. `:9090`).
+- API dials `GRPC_TARGET` and uses gRPC `round_robin` policy.
+- Set `GRPC_TARGET` to a DNS target with `dns:///` scheme, e.g. `dns:///worker:9090`. Docker Compose’s internal DNS returns multiple A records for a scaled `worker` service, and gRPC will distribute requests across replicas.
+- Default `GRPC_TARGET` is `dns:///worker:9090` (suitable for compose). If you omit `dns:///`, the loader will prepend it automatically.
+
 ## Dependency Injection (Wire)
 
 This project uses Google Wire for compile-time DI of infrastructure:
