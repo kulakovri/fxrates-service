@@ -13,6 +13,7 @@ import (
 
 var infraSet = wire.NewSet(
 	ProvideLogger,
+	ProvideConfig,
 	ProvideDB,
 	ProvideRepos,
 	ProvideRedisClient,

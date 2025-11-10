@@ -18,22 +18,23 @@ import (
 // API injector: builds *httpserver.Server + Cleanup
 func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	logger := ProvideLogger()
-	db, cleanup, err := ProvideDB(ctx, logger)
+	config := ProvideConfig()
+	db, cleanup, err := ProvideDB(ctx, logger, config)
 	if err != nil {
 		return nil, nil, err
 	}
 	repos := ProvideRepos(db)
-	rateProvider, err := ProvideRateProvider()
+	rateProvider, err := ProvideRateProvider(config)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	client, cleanup2, err := ProvideRedisClient()
+	client, cleanup2, err := ProvideRedisClient(config)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	services := ProvideIdempotency(client)
+	services := ProvideIdempotency(client, config)
 	fxRatesService := ProvideFXRatesService(repos, rateProvider, services)
 	server := httpserver.NewServer(fxRatesService)
 	return server, func() {
@@ -45,17 +46,18 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 // Worker injector: builds application.Worker + Cleanup
 func InitWorker(ctx context.Context) (application.Worker, func(), error) {
 	logger := ProvideLogger()
-	db, cleanup, err := ProvideDB(ctx, logger)
+	config := ProvideConfig()
+	db, cleanup, err := ProvideDB(ctx, logger, config)
 	if err != nil {
 		return nil, nil, err
 	}
 	repos := ProvideRepos(db)
-	rateProvider, err := ProvideRateProvider()
+	rateProvider, err := ProvideRateProvider(config)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	worker := ProvideWorker(repos, rateProvider, logger)
+	worker := ProvideWorker(repos, rateProvider, logger, config)
 	return worker, func() {
 		cleanup()
 	}, nil
@@ -65,6 +67,7 @@ func InitWorker(ctx context.Context) (application.Worker, func(), error) {
 
 var infraSet = wire.NewSet(
 	ProvideLogger,
+	ProvideConfig,
 	ProvideDB,
 	ProvideRepos,
 	ProvideRedisClient,

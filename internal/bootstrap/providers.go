@@ -3,11 +3,11 @@ package bootstrap
 import (
 	"context"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
 	"fxrates-service/internal/application"
+	"fxrates-service/internal/config"
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/provider"
@@ -29,14 +29,7 @@ type Services struct {
 	Idem application.IdempotencyStore
 }
 
-// helpers
-func getenv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
+// helpers (used locally where necessary)
 func atoiDef(s string, def int) int {
 	i, err := strconv.Atoi(s)
 	if err != nil {
@@ -45,14 +38,12 @@ func atoiDef(s string, def int) int {
 	return i
 }
 
-func durMS(env string, defMs int) time.Duration {
-	return time.Duration(atoiDef(getenv(env, strconv.Itoa(defMs)), defMs)) * time.Millisecond
-}
-
 func ProvideLogger() *zap.Logger { return logx.L() }
 
-func ProvideDB(ctx context.Context, log *zap.Logger) (*pg.DB, func(), error) {
-	dbURL := getenv("DATABASE_URL", "")
+func ProvideConfig() config.Config { return config.Load() }
+
+func ProvideDB(ctx context.Context, log *zap.Logger, cfg config.Config) (*pg.DB, func(), error) {
+	dbURL := cfg.DatabaseURL
 	if dbURL == "" {
 		return nil, func() {}, ErrMissingDBURL
 	}
@@ -80,30 +71,28 @@ func ProvideRepos(db *pg.DB) Repos {
 	}
 }
 
-func ProvideRedisClient() (*redis.Client, func(), error) {
-	addr := getenv("REDIS_ADDR", "localhost:6379")
-	pass := getenv("REDIS_PASSWORD", "")
-	rdb := atoiDef(getenv("REDIS_DB", "0"), 0)
-	client := redis.NewClient(&redis.Options{Addr: addr, Password: pass, DB: rdb})
+func ProvideRedisClient(cfg config.Config) (*redis.Client, func(), error) {
+	client := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
 	return client, func() { _ = client.Close() }, nil
 }
 
-func ProvideIdempotency(client *redis.Client) Services {
-	ttl := durMS("IDEMPOTENCY_TTL_MS", 24*60*60*1000)
-	store := redisstore.New(client, ttl)
+func ProvideIdempotency(client *redis.Client, cfg config.Config) Services {
+	store := redisstore.New(client, cfg.RedisTTL)
 	return Services{Idem: store}
 }
 
 // BuildCleanup is not needed when using wire's built-in cleanup aggregation.
 
-func ProvideRateProvider() (application.RateProvider, error) {
-	switch getenv("PROVIDER", "fake") {
+func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
+	switch cfg.Provider {
 	case "exchangeratesapi":
-		base := getenv("EXCHANGE_API_BASE", "https://api.exchangeratesapi.io")
-		key := getenv("EXCHANGE_API_KEY", "")
 		return &provider.ExchangeRatesAPIProvider{
-			BaseURL: base,
-			APIKey:  key,
+			BaseURL: cfg.ExchangeAPIBase,
+			APIKey:  cfg.ExchangeAPIKey,
 			Client:  &http.Client{Timeout: 4 * time.Second},
 		}, nil
 	default:
@@ -115,15 +104,15 @@ func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services) *ap
 	return application.NewFXRatesService(r.QuoteRepo, r.JobRepo, rp, s.Idem)
 }
 
-func ProvideWorker(r Repos, rp application.RateProvider, log *zap.Logger) application.Worker {
-	switch getenv("WORKER_TYPE", "db") {
+func ProvideWorker(r Repos, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
+	switch cfg.WorkerType {
 	case "db":
 		return &worker.DbWorker{
 			Jobs:       r.JobRepo,
 			Quotes:     r.QuoteRepo,
 			Provider:   rp,
-			PollEvery:  durMS("WORKER_POLL_MS", 250),
-			BatchLimit: atoiDef(getenv("WORKER_BATCH_LIMIT", "10"), 10),
+			PollEvery:  cfg.WorkerPoll,
+			BatchLimit: cfg.WorkerBatchSize,
 			Log:        log,
 		}
 	default:
