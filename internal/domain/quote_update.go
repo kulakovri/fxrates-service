@@ -7,5 +7,6 @@ type QuoteUpdate struct {
 	Pair      Pair
 	Status    QuoteUpdateStatus
 	Error     *string
+	Price     *float64
 	UpdatedAt time.Time
 }

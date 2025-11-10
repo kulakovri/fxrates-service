@@ -41,8 +41,22 @@ func (r *UpdateJobRepo) CreateQueued(ctx context.Context, pair string, _ *string
 
 func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpdate, error) {
 	const q = `
-        SELECT id::text, pair, status, error, COALESCE(completed_at, requested_at)
-        FROM quote_updates WHERE id=$1`
+        SELECT
+          u.id::text,
+          u.pair,
+          u.status,
+          u.error,
+          COALESCE(h.quoted_at, u.completed_at, u.requested_at) AS updated_at,
+          h.price::float8
+        FROM quote_updates u
+        LEFT JOIN LATERAL (
+          SELECT price, quoted_at
+          FROM quotes_history
+          WHERE update_id = u.id
+          ORDER BY quoted_at DESC
+          LIMIT 1
+        ) h ON TRUE
+        WHERE u.id=$1`
 	log := logx.L().With(
 		zap.String("repo", "update_job"),
 		zap.String("operation", "GetByID"),
@@ -53,7 +67,8 @@ func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpd
 	var out domain.QuoteUpdate
 	var errMsg *string
 	var status string
-	err := r.db.Pool.QueryRow(ctx, q, id).Scan(&out.ID, &out.Pair, &status, &errMsg, &out.UpdatedAt)
+	var price *float64
+	err := r.db.Pool.QueryRow(ctx, q, id).Scan(&out.ID, &out.Pair, &status, &errMsg, &out.UpdatedAt, &price)
 	if errors.Is(err, pgx.ErrNoRows) {
 		log.Info("sql.query_no_rows")
 		return domain.QuoteUpdate{}, application.ErrNotFound
@@ -63,6 +78,7 @@ func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpd
 		return domain.QuoteUpdate{}, err
 	}
 	out.Error = errMsg
+	out.Price = price
 	switch status {
 	case "queued":
 		out.Status = domain.QuoteUpdateStatusQueued

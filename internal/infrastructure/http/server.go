@@ -152,10 +152,17 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 		return
 	}
 	log.Info("get_quote_update.success", zap.String("status", string(upd.Status)))
+	// Map price (*float64) to OpenAPI price (*float32)
+	var price *float32
+	if upd.Price != nil {
+		p := float32(*upd.Price)
+		price = &p
+	}
 	resp := openapi.QuoteUpdateDetails{
 		UpdateId:  upd.ID,
 		Pair:      string(upd.Pair),
 		Status:    mapStatus(upd.Status),
+		Price:     price,
 		UpdatedAt: upd.UpdatedAt,
 	}
 	writeJSON(w, http.StatusOK, resp)

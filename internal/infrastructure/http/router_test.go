@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"fxrates-service/internal/domain"
 
 	"github.com/stretchr/testify/require"
 )
@@ -79,4 +82,43 @@ func TestRequestQuoteUpdate_InvalidPair(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.JSONEq(t, `{"code":400,"message":"invalid pair format (e.g. EUR/USD)"}`, rec.Body.String())
+}
+
+func TestGetQuoteUpdate_WithPrice(t *testing.T) {
+	// Prepare in-memory service and pre-populate a completed update with price and timestamp
+	svc, _, ur, _ := NewInMemoryService()
+	ts := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	price := 1.234567
+	ur.mu.Lock()
+	ur.jobs["update-1"] = domain.QuoteUpdate{
+		ID:        "update-1",
+		Pair:      "EUR/USD",
+		Status:    domain.QuoteUpdateStatusDone,
+		Price:     &price,
+		UpdatedAt: ts,
+	}
+	ur.mu.Unlock()
+
+	srv := NewServer(svc)
+	h := NewRouter(srv)
+
+	req := httptest.NewRequest(http.MethodGet, "/quotes/updates/update-1", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		UpdateID  string    `json:"update_id"`
+		Pair      string    `json:"pair"`
+		Status    string    `json:"status"`
+		Price     *float32  `json:"price"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "update-1", resp.UpdateID)
+	require.Equal(t, "EUR/USD", resp.Pair)
+	require.Equal(t, "completed", resp.Status)
+	require.NotNil(t, resp.Price)
+	require.InDelta(t, float64(*resp.Price), price, 1e-5)
+	require.Equal(t, ts, resp.UpdatedAt)
 }
