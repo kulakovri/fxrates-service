@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"regexp"
+	"time"
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
@@ -132,6 +134,43 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// Run starts the HTTP server and blocks until the context is canceled or the server stops.
+func (s *Server) Run(ctx context.Context) error {
+	addr := ":" + getEnv("PORT", "8080")
+	server := &http.Server{
+		Addr:    addr,
+		Handler: NewRouter(s),
+	}
+	logx.L().Info("server started", zap.String("addr", addr))
+	errCh := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+			return
+		}
+		errCh <- http.ErrServerClosed
+	}()
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+		logx.L().Info("server stopped")
+		return nil
+	case err := <-errCh:
+		if err == http.ErrServerClosed {
+			return nil
+		}
+		return err
+	}
+}
+
+func getEnv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

@@ -22,6 +22,22 @@ docker build -t fxrates:dev .
 docker run --rm -p 8080:8080 fxrates:dev
 ```
 
+## Dependency Injection (Wire)
+
+This project uses Google Wire for compile-time DI of infrastructure:
+
+- Regenerate after adding/removing providers:
+
+```bash
+wire ./internal/bootstrap
+```
+
+- Env switches:
+  - `PROVIDER=fake|exchangeratesapi`
+  - `WORKER_TYPE=db`
+  - PG: `DATABASE_URL`
+  - Redis: `REDIS_ADDR`, `REDIS_PASSWORD`, `REDIS_DB`, `IDEMPOTENCY_TTL_MS` (default 24h)
+
 ## Endpoints
 
 ### Running PG integration tests

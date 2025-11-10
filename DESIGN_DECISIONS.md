@@ -11,6 +11,24 @@ The project follows a strict Clean Architecture pattern:
 
 This separation ensures testability, composability, and clear ownership of responsibilities.
 
+## Centralized Configuration
+
+Runtime configuration is unified in a single package: `internal/config/config.go`.
+
+- All environment variables (service port, storage backend, `DATABASE_URL`, Redis settings, provider type/URL/API key, worker type, polling interval, batch size, etc.) are read in one place.
+- Sensible defaults are provided, and the resulting `Config` struct is injected into bootstrap.
+- This removes scattered `os.Getenv` calls and makes configuration reproducible across local, CI, and container environments.
+- Both API and Worker processes consume the same `Config` via bootstrap, keeping environment-driven behavior explicit and testable.
+
+## Bootstrap Composition Roots
+
+The composition roots (API and Worker) are kept minimal and delegate wiring to bootstrap:
+
+- `bootstrap.InitAPI(ctx)` builds repositories, Redis idempotency store, rate provider, and returns a server object with a `Run(ctx)` method.
+- `bootstrap.InitWorker(ctx)` builds repositories and constructs the configured worker implementation.
+- Cleanup functions (closing DB/Redis) are aggregated and returned for a single deferred call per process.
+- Environment-driven choices (e.g., fake vs external rate provider, polling cadence) are applied in bootstrap using the centralized `Config`.
+
 ## Immutable Quotes History
 
 Introduced `quotes_history` as an append-only table that records all fetched FX quotes.  
@@ -44,7 +62,8 @@ The worker runs separately from the API process.
 It polls for queued updates from the database (`quote_updates`), fetches rates via a provider,  
 and persists results back.  
 This separation enables horizontal scaling and future replacement of transport channels (e.g., SQS).  
-A `Worker` interface was introduced to allow multiple strategies (e.g., `DbWorker`, `InMemWorker`).
+A `Worker` interface was introduced to allow multiple strategies (e.g., `DbWorker`).  
+An in-memory worker exists only as a test helper (`*_test.go`) and is not shipped in binaries.
 
 ## Observability Philosophy
 
