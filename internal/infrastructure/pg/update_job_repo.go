@@ -15,29 +15,12 @@ type UpdateJobRepo struct{ db *DB }
 
 func NewUpdateJobRepo(db *DB) *UpdateJobRepo { return &UpdateJobRepo{db: db} }
 
-func (r *UpdateJobRepo) CreateQueued(ctx context.Context, pair string, idem *string) (string, error) {
-	if idem != nil {
-		const findByIdem = `SELECT id::text FROM quote_updates WHERE idempotency_key=$1`
-		var existing string
-		if err := r.db.Pool.QueryRow(ctx, findByIdem, *idem).Scan(&existing); err == nil {
-			return existing, nil
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return "", err
-		}
-	}
-
+func (r *UpdateJobRepo) CreateQueued(ctx context.Context, pair string, _ *string) (string, error) {
 	id := uuid.NewString()
 	const ins = `
-        INSERT INTO quote_updates(id, pair, status, idempotency_key)
-        VALUES ($1, $2, 'queued', $3)`
-	if _, err := r.db.Pool.Exec(ctx, ins, id, pair, idem); err != nil {
-		if idem != nil {
-			const back = `SELECT id::text FROM quote_updates WHERE idempotency_key=$1`
-			var existing string
-			if e := r.db.Pool.QueryRow(ctx, back, *idem).Scan(&existing); e == nil {
-				return existing, nil
-			}
-		}
+        INSERT INTO quote_updates(id, pair, status)
+        VALUES ($1, $2, 'queued')`
+	if _, err := r.db.Pool.Exec(ctx, ins, id, pair); err != nil {
 		return "", err
 	}
 	return id, nil

@@ -2,6 +2,12 @@
 
 Asynchronous FX rates microservice in Go 1.22 (Clean Architecture).
 
+## Configuration
+
+- Supported currency pairs are limited to combinations of `USD`, `EUR`, and `MXN`. Requests outside this set return `ErrUnsupportedPair`.
+- The `exchangeratesapi` provider computes cross rates from the API's EUR base so it works even on plans that disallow changing the base.
+- Configure provider credentials via `PROVIDER=exchangeratesapi`, `EXCHANGE_API_BASE=https://api.exchangeratesapi.io`, and `EXCHANGE_API_KEY=<your-key>`.
+
 ## Run
 
 ```bash
@@ -15,6 +21,22 @@ Docker
 docker build -t fxrates:dev .
 docker run --rm -p 8080:8080 fxrates:dev
 ```
+
+## Dependency Injection (Wire)
+
+This project uses Google Wire for compile-time DI of infrastructure:
+
+- Regenerate after adding/removing providers:
+
+```bash
+wire ./internal/bootstrap
+```
+
+- Env switches:
+  - `PROVIDER=fake|exchangeratesapi`
+  - `WORKER_TYPE=db`
+  - PG: `DATABASE_URL`
+  - Redis: `REDIS_ADDR`, `REDIS_PASSWORD`, `REDIS_DB`, `IDEMPOTENCY_TTL_MS` (default 24h)
 
 ## Endpoints
 

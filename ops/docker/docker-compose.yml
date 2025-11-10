@@ -23,6 +23,7 @@ services:
       STORAGE: "pg"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
       LOG_LEVEL: "info"
+      REDIS_ADDR: ${REDIS_ADDR}
     ports:
       - "8080:8080"
 
@@ -38,7 +39,15 @@ services:
       WORKER_TYPE: "db"
       WORKER_POLL_MS: "250"
       WORKER_BATCH_LIMIT: "10"
-      PROVIDER: "fake"
+      PROVIDER: "exchangeratesapi"
+      EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
+      EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
+      REDIS_ADDR: ${REDIS_ADDR}
     deploy:
       replicas: 3
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
 

@@ -2,8 +2,11 @@ package logx
 
 import (
 	"context"
+	"strings"
 
+	"fxrates-service/internal/config"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -11,7 +14,21 @@ var (
 )
 
 func init() {
-	logger = zap.Must(zap.NewProduction())
+	zapCfg := zap.NewProductionConfig()
+	zapCfg.Sampling = nil
+	zapCfg.DisableStacktrace = true
+	zapCfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	appCfg := config.Load()
+	if appCfg.LogLevel != "" {
+		_ = zapCfg.Level.UnmarshalText([]byte(strings.ToLower(appCfg.LogLevel)))
+	}
+
+	var err error
+	logger, err = zapCfg.Build(zap.AddCaller(), zap.AddCallerSkip(0))
+	if err != nil {
+		panic(err)
+	}
 }
 
 // L returns the package-level logger instance.

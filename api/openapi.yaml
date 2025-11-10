@@ -20,7 +20,7 @@ paths:
       parameters:
         - name: X-Idempotency-Key
           in: header
-          required: false
+          required: true
           description: Idempotency key for the request
           schema:
             type: string

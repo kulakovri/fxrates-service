@@ -23,18 +23,24 @@ type FXRatesService struct {
 
 	now   ClockFunc
 	newID IDGenFunc
+	idem  IdempotencyStore
 }
 
 func WithClock(f ClockFunc) Option { return func(s *FXRatesService) { s.now = f } }
 func WithIDGen(f IDGenFunc) Option { return func(s *FXRatesService) { s.newID = f } }
 
-func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, opts ...Option) *FXRatesService {
+func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, idem IdempotencyStore, opts ...Option) *FXRatesService {
 	s := &FXRatesService{
 		quoteRepo:     quoteRepo,
 		updateJobRepo: updateJobRepo,
 		rateProvider:  rateProvider,
 		now:           time.Now,
 		newID:         func() string { return uuid.NewString() },
+	}
+	if idem != nil {
+		s.idem = idem
+	} else {
+		s.idem = NoopIdempotency{}
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -43,6 +49,19 @@ func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, ratePro
 }
 
 func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, idem *string) (string, error) {
+	if !domain.ValidatePair(pair) {
+		return "", ErrUnsupportedPair
+	}
+	if idem == nil || *idem == "" {
+		return "", ErrBadRequest
+	}
+	ok, err := s.idem.TryReserve(ctx, *idem)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", ErrConflict
+	}
 	updateID, err := s.updateJobRepo.CreateQueued(ctx, pair, idem)
 	if err != nil {
 		return "", err
@@ -55,5 +74,8 @@ func (s *FXRatesService) GetQuoteUpdate(ctx context.Context, id string) (domain.
 }
 
 func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.Quote, error) {
+	if !domain.ValidatePair(pair) {
+		return domain.Quote{}, ErrUnsupportedPair
+	}
 	return s.quoteRepo.GetLast(ctx, pair)
 }
