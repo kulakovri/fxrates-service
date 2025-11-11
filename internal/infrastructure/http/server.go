@@ -11,7 +11,6 @@ import (
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
 	"fxrates-service/internal/domain"
-	infraconfig "fxrates-service/internal/infrastructure/config"
 	"fxrates-service/internal/infrastructure/grpc/ratepb"
 	"fxrates-service/internal/infrastructure/http/openapi"
 	"fxrates-service/internal/infrastructure/logx"
@@ -189,7 +188,7 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 
 // Run starts the HTTP server and blocks until the context is canceled or the server stops.
 func (s *Server) Run(ctx context.Context) error {
-	addr := ":" + getEnv("PORT", infraconfig.DefaultHTTPPort)
+	addr := ":" + config.Load().Port
 	server := &http.Server{
 		Addr:    addr,
 		Handler: NewRouter(s),
@@ -205,7 +204,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), infraconfig.DefaultShutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), config.Load().ShutdownTimeout)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 		logx.L().Info("server stopped")

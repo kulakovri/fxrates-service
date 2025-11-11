@@ -20,6 +20,8 @@ type ExchangeRatesAPIProvider struct {
 	BaseURL string
 	APIKey  string
 	Client  *httpx.Client
+	// Optional backoff config; if nil, httpx defaults apply. Prefer wiring from config.
+	BackoffCfg *httpx.BackoffConfig
 }
 
 var _ application.RateProvider = (*ExchangeRatesAPIProvider)(nil)
@@ -46,7 +48,7 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 
 	var res apiResponse
-	if err := p.Client.DoJSON(ctx, req, &res, nil); err != nil {
+	if err := p.Client.DoJSON(ctx, req, &res, p.BackoffCfg); err != nil {
 		return domain.Quote{}, fmt.Errorf("provider: %w", err)
 	}
 	return domain.Quote{

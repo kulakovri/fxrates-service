@@ -97,6 +97,11 @@ func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
 			BaseURL: cfg.ExchangeAPIBase,
 			APIKey:  cfg.ExchangeAPIKey,
 			Client:  &httpx.Client{HTTP: &http.Client{Timeout: 4 * time.Second}},
+			BackoffCfg: &httpx.BackoffConfig{
+				Initial: cfg.HTTPBackoffInitial,
+				Max:     cfg.HTTPBackoffMax,
+				Total:   cfg.HTTPBackoffTotal,
+			},
 		}, nil
 	default:
 		return provider.NewFake(1.2345), nil

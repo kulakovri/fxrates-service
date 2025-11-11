@@ -4,7 +4,8 @@ import (
 	"context"
 	"time"
 
-	infraconfig "fxrates-service/internal/infrastructure/config"
+	"fxrates-service/internal/config"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -15,7 +16,8 @@ func Connect(ctx context.Context, url string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns, cfg.MinConns = infraconfig.DefaultPGMaxConns, infraconfig.DefaultPGMinConns
+	appCfg := config.Load()
+	cfg.MaxConns, cfg.MinConns = int32(appCfg.PGMaxConns), int32(appCfg.PGMinConns)
 	cfg.MaxConnIdleTime = 2 * time.Minute
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
