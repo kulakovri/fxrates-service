@@ -65,7 +65,7 @@ func Test_GetQuoteUpdate_NotFound(t *testing.T) {
 
 	_, err := svc.GetQuoteUpdate(context.Background(), "nope")
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNotFound)
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 func Test_GetLastQuote(t *testing.T) {
@@ -89,7 +89,7 @@ func Test_GetLastQuote_UnsupportedPair(t *testing.T) {
 
 	_, err := svc.GetLastQuote(context.Background(), "GBP/USD")
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNotFound)
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 func strPtr(s string) *string { return &s }

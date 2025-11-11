@@ -3,7 +3,6 @@ package pg
 import (
 	"context"
 
-	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
 	"fxrates-service/internal/infrastructure/logx"
 
@@ -28,10 +27,10 @@ func (r *QuoteRepo) GetLast(ctx context.Context, pair string) (domain.Quote, err
 	if err := r.db.Pool.QueryRow(ctx, q, pair).Scan(&out.Pair, &out.Price, &out.UpdatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			log.Info("sql.query_no_rows")
-			return domain.Quote{}, application.ErrNotFound
+			return domain.Quote{}, domain.ErrNotFound
 		}
 		log.Error("sql.query_failed", zap.Error(err))
-		return domain.Quote{}, application.ErrNotFound
+		return domain.Quote{}, err
 	}
 	log.Info("sql.query_success",
 		zap.Float64("price", out.Price),

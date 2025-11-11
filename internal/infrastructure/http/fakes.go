@@ -23,11 +23,11 @@ func (f *fakeQuoteRepo) GetLast(_ context.Context, pair string) (domain.Quote, e
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	if f.store == nil {
-		return domain.Quote{}, application.ErrNotFound
+		return domain.Quote{}, domain.ErrNotFound
 	}
 	q, ok := f.store[pair]
 	if !ok {
-		return domain.Quote{}, application.ErrNotFound
+		return domain.Quote{}, domain.ErrNotFound
 	}
 	return q, nil
 }
@@ -66,11 +66,11 @@ func (f *fakeUpdateJobRepo) GetByID(_ context.Context, id string) (domain.QuoteU
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	if f.jobs == nil {
-		return domain.QuoteUpdate{}, application.ErrNotFound
+		return domain.QuoteUpdate{}, domain.ErrNotFound
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return domain.QuoteUpdate{}, application.ErrNotFound
+		return domain.QuoteUpdate{}, domain.ErrNotFound
 	}
 	return j, nil
 }
@@ -83,7 +83,7 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return application.ErrNotFound
+		return domain.ErrNotFound
 	}
 	j.Status = st
 	j.Error = errMsg

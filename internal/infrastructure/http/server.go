@@ -79,8 +79,8 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		case errors.Is(err, application.ErrBadRequest):
 			writeError(w, http.StatusBadRequest, "bad request")
 			return
-		case errors.Is(err, application.ErrUnsupportedPair):
-			writeError(w, http.StatusBadRequest, "unsupported pair")
+		case errors.Is(err, domain.ErrUnsupportedPair):
+			writeError(w, http.StatusBadRequest, "invalid pair")
 			return
 		case errors.Is(err, application.ErrConflict):
 			writeError(w, http.StatusConflict, "conflict")
@@ -127,7 +127,7 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 	log.Info("get_quote_update.call_service")
 	upd, err := s.svc.GetQuoteUpdate(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, application.ErrNotFound) {
+		if errors.Is(err, domain.ErrNotFound) {
 			log.Info("get_quote_update.not_found")
 			writeError(w, http.StatusNotFound, "not found")
 			return
@@ -163,7 +163,7 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 	log.Info("get_last_quote.call_service")
 	q, err := s.svc.GetLastQuote(r.Context(), params.Pair)
 	if err != nil {
-		if errors.Is(err, application.ErrNotFound) {
+		if errors.Is(err, domain.ErrNotFound) {
 			log.Info("get_last_quote.not_found")
 			writeError(w, http.StatusNotFound, "not found")
 			return

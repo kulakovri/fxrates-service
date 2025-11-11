@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"fxrates-service/internal/domain"
@@ -67,11 +68,25 @@ func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, id
 }
 
 func (s *FXRatesService) GetQuoteUpdate(ctx context.Context, id string) (domain.QuoteUpdate, error) {
-	return s.updateJobRepo.GetByID(ctx, id)
+	upd, err := s.updateJobRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.QuoteUpdate{}, domain.ErrNotFound
+		}
+		return domain.QuoteUpdate{}, err
+	}
+	return upd, nil
 }
 
 func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.Quote, error) {
-	return s.quoteRepo.GetLast(ctx, pair)
+	q, err := s.quoteRepo.GetLast(ctx, pair)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.Quote{}, domain.ErrNotFound
+		}
+		return domain.Quote{}, err
+	}
+	return q, nil
 }
 
 // ProcessGRPCUpdate performs background processing to fetch a quote and persist results.

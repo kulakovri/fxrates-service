@@ -22,7 +22,7 @@ func (f *fakeQuoteRepo) GetLast(_ context.Context, pair string) (domain.Quote, e
 	}
 	q, ok := f.store[pair]
 	if !ok {
-		return domain.Quote{}, ErrNotFound
+		return domain.Quote{}, domain.ErrNotFound
 	}
 	return q, nil
 }
@@ -65,7 +65,7 @@ func (f *fakeUpdateJobRepo) GetByID(_ context.Context, id string) (domain.QuoteU
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return domain.QuoteUpdate{}, ErrNotFound
+		return domain.QuoteUpdate{}, domain.ErrNotFound
 	}
 	return j, nil
 }
@@ -76,7 +76,7 @@ func (f *fakeUpdateJobRepo) UpdateStatus(_ context.Context, id string, st domain
 	}
 	j, ok := f.jobs[id]
 	if !ok {
-		return ErrNotFound
+		return domain.ErrNotFound
 	}
 	j.Status, j.Error = st, errMsg
 	f.jobs[id] = j

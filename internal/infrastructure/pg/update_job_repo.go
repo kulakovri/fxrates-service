@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
 	"fxrates-service/internal/infrastructure/logx"
 
@@ -71,7 +70,7 @@ func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpd
 	err := r.db.Pool.QueryRow(ctx, q, id).Scan(&out.ID, &out.Pair, &status, &errMsg, &out.UpdatedAt, &price)
 	if errors.Is(err, pgx.ErrNoRows) {
 		log.Info("sql.query_no_rows")
-		return domain.QuoteUpdate{}, application.ErrNotFound
+		return domain.QuoteUpdate{}, domain.ErrNotFound
 	}
 	if err != nil {
 		log.Error("sql.query_failed", zap.Error(err))
@@ -132,7 +131,7 @@ func (r *UpdateJobRepo) UpdateStatus(ctx context.Context, id string, st domain.Q
 	}
 	if tag.RowsAffected() == 0 {
 		log.Warn("sql.exec_no_rows")
-		return application.ErrNotFound
+		return domain.ErrNotFound
 	}
 	log.Info("sql.exec_success", zap.Int64("rows_affected", int64(tag.RowsAffected())))
 	return nil
