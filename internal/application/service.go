@@ -49,9 +49,6 @@ func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, ratePro
 }
 
 func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, idem *string) (string, error) {
-	if !domain.ValidatePair(pair) {
-		return "", ErrUnsupportedPair
-	}
 	if idem == nil || *idem == "" {
 		return "", ErrBadRequest
 	}
@@ -74,8 +71,29 @@ func (s *FXRatesService) GetQuoteUpdate(ctx context.Context, id string) (domain.
 }
 
 func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.Quote, error) {
-	if !domain.ValidatePair(pair) {
-		return domain.Quote{}, ErrUnsupportedPair
-	}
 	return s.quoteRepo.GetLast(ctx, pair)
+}
+
+// ProcessGRPCUpdate performs background processing to fetch a quote and persist results.
+// The fetch function abstracts the transport (e.g., gRPC) and must return a complete domain.Quote.
+func (s *FXRatesService) ProcessGRPCUpdate(ctx context.Context, updateID, pair string, fetch func(context.Context) (domain.Quote, error)) {
+	q, err := fetch(ctx)
+	if err != nil {
+		msg := err.Error()
+		_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusFailed, &msg)
+		return
+	}
+	_ = s.quoteRepo.AppendHistory(ctx, domain.QuoteHistory{
+		Pair:     q.Pair,
+		Price:    q.Price,
+		QuotedAt: q.UpdatedAt,
+		Source:   "grpc",
+		UpdateID: &updateID,
+	})
+	_ = s.quoteRepo.Upsert(ctx, domain.Quote{
+		Pair:      q.Pair,
+		Price:     q.Price,
+		UpdatedAt: q.UpdatedAt,
+	})
+	_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusDone, nil)
 }

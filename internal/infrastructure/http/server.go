@@ -6,12 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"regexp"
 	"time"
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
 	"fxrates-service/internal/domain"
+	infraconfig "fxrates-service/internal/infrastructure/config"
 	"fxrates-service/internal/infrastructure/grpc/ratepb"
 	"fxrates-service/internal/infrastructure/http/openapi"
 	"fxrates-service/internal/infrastructure/logx"
@@ -58,10 +58,9 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		writeError(w, http.StatusBadRequest, "pair is required")
 		return
 	}
-	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
-	if !rePair.MatchString(body.Pair) {
+	if !domain.ValidatePair(body.Pair) {
 		log.Warn("request_quote_update.invalid_pair_format", zap.String("pair", body.Pair))
-		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
+		writeError(w, http.StatusBadRequest, "invalid pair")
 		return
 	}
 	idem := r.Header.Get("X-Idempotency-Key")
@@ -103,40 +102,24 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		pair := body.Pair
 		updateID := id
 		timeout := s.cfg.RequestTimeout
-		go func() {
-			bgCtx := context.Background()
+		go s.svc.ProcessGRPCUpdate(context.Background(), updateID, pair, func(ctx context.Context) (domain.Quote, error) {
 			l := logx.L().With(zap.String("trace_id", traceID), zap.String("pair", pair), zap.String("update_id", updateID))
-			res, err := s.grpcClient.Fetch(bgCtx, pair, traceID, timeout)
+			res, err := s.grpcClient.Fetch(ctx, pair, traceID, timeout)
 			if err != nil {
-				msg := err.Error()
-				_ = s.jobRepo.UpdateStatus(bgCtx, updateID, domain.QuoteUpdateStatusFailed, &msg)
 				l.Warn("grpc_background.fetch_failed", zap.Error(err))
-				return
+				return domain.Quote{}, err
 			}
-			// Parse time
 			t, err := time.Parse(time.RFC3339Nano, res.GetUpdatedAt())
 			if err != nil {
-				msg := err.Error()
-				_ = s.jobRepo.UpdateStatus(bgCtx, updateID, domain.QuoteUpdateStatusFailed, &msg)
 				l.Warn("grpc_background.bad_time", zap.Error(err))
-				return
+				return domain.Quote{}, err
 			}
-			// Persist history and quote, then mark done
-			_ = s.quoteRepo.AppendHistory(bgCtx, domain.QuoteHistory{
-				Pair:     domain.Pair(res.GetPair()),
-				Price:    res.GetPrice(),
-				QuotedAt: t,
-				Source:   "grpc",
-				UpdateID: &updateID,
-			})
-			_ = s.quoteRepo.Upsert(bgCtx, domain.Quote{
+			return domain.Quote{
 				Pair:      domain.Pair(res.GetPair()),
 				Price:     res.GetPrice(),
 				UpdatedAt: t,
-			})
-			_ = s.jobRepo.UpdateStatus(bgCtx, updateID, domain.QuoteUpdateStatusDone, nil)
-			l.Info("grpc_background.done")
-		}()
+			}, nil
+		})
 	}
 }
 
@@ -173,10 +156,9 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 
 func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params openapi.GetLastQuoteParams) {
 	log := loggerForRequest(r).With(zap.String("pair", params.Pair))
-	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
-	if !rePair.MatchString(params.Pair) {
+	if !domain.ValidatePair(params.Pair) {
 		log.Warn("get_last_quote.invalid_pair_format")
-		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
+		writeError(w, http.StatusBadRequest, "invalid pair")
 		return
 	}
 	log.Info("get_last_quote.call_service")
@@ -185,11 +167,6 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 		if errors.Is(err, application.ErrNotFound) {
 			log.Info("get_last_quote.not_found")
 			writeError(w, http.StatusNotFound, "not found")
-			return
-		}
-		if errors.Is(err, application.ErrUnsupportedPair) {
-			log.Warn("get_last_quote.unsupported_pair")
-			writeError(w, http.StatusBadRequest, "unsupported pair")
 			return
 		}
 		logRequestError(r, "get last quote failed", err)
@@ -212,7 +189,7 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 
 // Run starts the HTTP server and blocks until the context is canceled or the server stops.
 func (s *Server) Run(ctx context.Context) error {
-	addr := ":" + getEnv("PORT", "8080")
+	addr := ":" + getEnv("PORT", infraconfig.DefaultHTTPPort)
 	server := &http.Server{
 		Addr:    addr,
 		Handler: NewRouter(s),
@@ -228,7 +205,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), infraconfig.DefaultShutdownTimeout)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 		logx.L().Info("server stopped")

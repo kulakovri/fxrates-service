@@ -39,9 +39,8 @@ func Test_RequestQuoteUpdate_UnsupportedPair(t *testing.T) {
 	)
 
 	id, err := svc.RequestQuoteUpdate(context.Background(), "GBP/USD", strPtr("idem-1"))
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrUnsupportedPair)
-	require.Empty(t, id)
+	require.NoError(t, err)
+	require.NotEmpty(t, id)
 }
 
 func Test_GetQuoteUpdate_Found(t *testing.T) {
@@ -90,7 +89,7 @@ func Test_GetLastQuote_UnsupportedPair(t *testing.T) {
 
 	_, err := svc.GetLastQuote(context.Background(), "GBP/USD")
 	require.Error(t, err)
-	require.ErrorIs(t, err, ErrUnsupportedPair)
+	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func strPtr(s string) *string { return &s }

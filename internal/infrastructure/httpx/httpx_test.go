@@ -56,7 +56,7 @@ func TestDoJSON_Retry500Then200(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	c := &Client{HTTP: rt}
-	if err := c.DoJSON(ctx, req, &out); err != nil {
+	if err := c.DoJSON(ctx, req, &out, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !out.OK {
@@ -92,7 +92,7 @@ func TestDoJSON_RetryNetTimeoutThen200(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	c := &Client{HTTP: rt}
-	if err := c.DoJSON(ctx, req, &out); err != nil {
+	if err := c.DoJSON(ctx, req, &out, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -106,7 +106,7 @@ func TestDoJSON_NoRetryOn400(t *testing.T) {
 	var out any
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
 	c := &Client{HTTP: rt}
-	err := c.DoJSON(context.Background(), req, &out)
+	err := c.DoJSON(context.Background(), req, &out, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -123,7 +123,7 @@ func TestDoJSON_DecodeError_NoRetry(t *testing.T) {
 	var out map[string]any
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
 	c := &Client{HTTP: rt}
-	err := c.DoJSON(context.Background(), req, &out)
+	err := c.DoJSON(context.Background(), req, &out, nil)
 	if err == nil {
 		t.Fatalf("expected decode error")
 	}

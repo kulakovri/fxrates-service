@@ -84,7 +84,7 @@ func TestRequestQuoteUpdate_InvalidPair(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.JSONEq(t, `{"code":400,"message":"invalid pair format (e.g. EUR/USD)"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":400,"message":"invalid pair"}`, rec.Body.String())
 }
 
 func TestRequestQuoteUpdate_UnsupportedPair_HTTP(t *testing.T) {
@@ -97,7 +97,7 @@ func TestRequestQuoteUpdate_UnsupportedPair_HTTP(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.JSONEq(t, `{"code":400,"message":"unsupported pair"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":400,"message":"invalid pair"}`, rec.Body.String())
 }
 
 func TestGetLastQuote_UnsupportedPair_HTTP(t *testing.T) {
@@ -106,7 +106,7 @@ func TestGetLastQuote_UnsupportedPair_HTTP(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.JSONEq(t, `{"code":400,"message":"unsupported pair"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":400,"message":"invalid pair"}`, rec.Body.String())
 }
 func TestGetQuoteUpdate_WithPrice(t *testing.T) {
 	// Prepare in-memory service and pre-populate a completed update with price and timestamp

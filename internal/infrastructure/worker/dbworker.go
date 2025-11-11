@@ -6,6 +6,7 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
+	infraconfig "fxrates-service/internal/infrastructure/config"
 	"go.uber.org/zap"
 )
 
@@ -27,10 +28,10 @@ func (w *DbWorker) Start(ctx context.Context) {
 		log = zap.NewNop()
 	}
 	if w.PollEvery <= 0 {
-		w.PollEvery = 250 * time.Millisecond
+		w.PollEvery = infraconfig.DefaultWorkerPoll
 	}
 	if w.BatchLimit <= 0 {
-		w.BatchLimit = 10
+		w.BatchLimit = infraconfig.DefaultWorkerBatch
 	}
 
 	t := time.NewTicker(w.PollEvery)

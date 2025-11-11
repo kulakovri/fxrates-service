@@ -46,7 +46,7 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 
 	var res apiResponse
-	if err := p.Client.DoJSON(ctx, req, &res); err != nil {
+	if err := p.Client.DoJSON(ctx, req, &res, nil); err != nil {
 		return domain.Quote{}, fmt.Errorf("provider: %w", err)
 	}
 	return domain.Quote{
