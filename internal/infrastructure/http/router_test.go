@@ -186,3 +186,69 @@ func TestRequestQuoteUpdate_IdempotencyConflict_HTTP(t *testing.T) {
 	require.Equal(t, http.StatusConflict, rec2.Code)
 	require.JSONEq(t, `{"code":409,"message":"conflict"}`, rec2.Body.String())
 }
+
+func Test_GetQuoteUpdate_PendingVsDone(t *testing.T) {
+	// Use in-memory service
+	svc, qr, ur, _ := NewInMemoryService()
+	_ = qr // not used but kept for clarity
+	srv := NewServer(svc)
+	h := NewRouter(srv)
+
+	// Create queued job via POST
+	body := map[string]string{"pair": "EUR/USD"}
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/quotes/updates", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Idempotency-Key", "idem-queue")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	var qresp struct {
+		UpdateID string `json:"update_id"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &qresp))
+	updateID := qresp.UpdateID
+	require.NotEmpty(t, updateID)
+
+	// Assert pending (queued) -> price is null
+	reqGet := httptest.NewRequest(http.MethodGet, "/quotes/updates/"+updateID, nil)
+	recGet := httptest.NewRecorder()
+	h.ServeHTTP(recGet, reqGet)
+	require.Equal(t, http.StatusOK, recGet.Code)
+	var get1 struct {
+		Status    string    `json:"status"`
+		Price     *float32  `json:"price"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	require.NoError(t, json.Unmarshal(recGet.Body.Bytes(), &get1))
+	require.Equal(t, "queued", get1.Status)
+	require.Nil(t, get1.Price)
+
+	// Simulate completion by updating the fake repo job with price and timestamp
+	ts := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	pp := float32(2.5)
+	ur.mu.Lock()
+	j := ur.jobs[updateID]
+	j.Status = domain.QuoteUpdateStatusDone
+	p64 := float64(pp)
+	j.Price = &p64
+	j.UpdatedAt = ts
+	ur.jobs[updateID] = j
+	ur.mu.Unlock()
+
+	// Assert done -> price set and updated_at reflects quoted time we set
+	reqGet2 := httptest.NewRequest(http.MethodGet, "/quotes/updates/"+updateID, nil)
+	recGet2 := httptest.NewRecorder()
+	h.ServeHTTP(recGet2, reqGet2)
+	require.Equal(t, http.StatusOK, recGet2.Code)
+	var get2 struct {
+		Status    string    `json:"status"`
+		Price     *float32  `json:"price"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	require.NoError(t, json.Unmarshal(recGet2.Body.Bytes(), &get2))
+	require.Equal(t, "done", get2.Status)
+	require.NotNil(t, get2.Price)
+	require.InDelta(t, 2.5, float64(*get2.Price), 1e-6)
+	require.Equal(t, ts, get2.UpdatedAt)
+}
