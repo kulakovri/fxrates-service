@@ -10,6 +10,7 @@ import (
 	"fxrates-service/internal/config"
 	rateclient "fxrates-service/internal/infrastructure/grpc/rateclient"
 	grpcserver "fxrates-service/internal/infrastructure/grpc/rateserver"
+	"fxrates-service/internal/infrastructure/httpx"
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/provider"
@@ -95,7 +96,7 @@ func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
 		return &provider.ExchangeRatesAPIProvider{
 			BaseURL: cfg.ExchangeAPIBase,
 			APIKey:  cfg.ExchangeAPIKey,
-			Client:  &http.Client{Timeout: 4 * time.Second},
+			Client:  &httpx.Client{HTTP: &http.Client{Timeout: 4 * time.Second}},
 		}, nil
 	default:
 		return provider.NewFake(1.2345), nil
