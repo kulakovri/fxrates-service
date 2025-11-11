@@ -39,6 +39,9 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 	RedisTTL      time.Duration
+	// Chan worker
+	ChanQueueSize   int
+	ChanConcurrency int
 }
 
 func getEnv(key, def string) string {
@@ -82,5 +85,7 @@ func Load() Config {
 		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
 		RedisDB:            atoiDef(getEnv("REDIS_DB", "0"), 0),
 		RedisTTL:           time.Duration(atoiDef(getEnv("IDEMPOTENCY_TTL_MS", "86400000"), 86400000)) * time.Millisecond,
+		ChanQueueSize:      atoiDef(getEnv("CHAN_QUEUE_SIZE", "100"), 100),
+		ChanConcurrency:    atoiDef(getEnv("CHAN_CONCURRENCY", "2"), 2),
 	}
 }

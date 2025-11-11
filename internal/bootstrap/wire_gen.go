@@ -10,6 +10,7 @@ import (
 	"context"
 	"fxrates-service/internal/application"
 	httpserver "fxrates-service/internal/infrastructure/http"
+	"fxrates-service/internal/infrastructure/worker"
 
 	"github.com/google/wire"
 )
@@ -50,11 +51,30 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	})
 	// Attach optional gRPC background client when in grpc mode
 	server.AttachGRPCBackground(repos.QuoteRepo, repos.JobRepo, grpcClient, config)
-	return server, func() {
+	// If chan mode, wire channel bus and start workers in-process
+	var finalCleanup = func() {
 		cleanup3()
 		cleanup2()
 		cleanup()
-	}, nil
+	}
+	if config.WorkerType == "chan" {
+		bus := ProvideChanBus(config)
+		for i := 0; i < config.ChanConcurrency; i++ {
+			go (&worker.ChanWorker{
+				Jobs:     bus.Ch,
+				Provider: rateProvider,
+				Quotes:   repos.QuoteRepo,
+				JobsRepo: repos.JobRepo,
+			}).Start(ctx)
+		}
+		server.SetEnqueuer(bus.Enqueue)
+		orig := finalCleanup
+		finalCleanup = func() {
+			bus.Shutdown()
+			orig()
+		}
+	}
+	return server, func() { finalCleanup() }, nil
 }
 
 // Worker injector: builds application.Worker or gRPC server runner + Cleanup

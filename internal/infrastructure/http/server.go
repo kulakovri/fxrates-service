@@ -30,11 +30,16 @@ type Server struct {
 	jobRepo    application.UpdateJobRepo
 	grpcClient RateFetcher
 	cfg        config.Config
+	enqueue    func(ctx context.Context, id, pair, traceID string) error
 }
 
 func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: svc} }
 
 func (s *Server) SetReadyCheck(fn func(context.Context) error) { s.ping = fn }
+
+func (s *Server) SetEnqueuer(fn func(context.Context, string, string, string) error) {
+	s.enqueue = fn
+}
 
 // AttachGRPCBackground enables async background processing via gRPC worker mode.
 func (s *Server) AttachGRPCBackground(q application.QuoteRepo, u application.UpdateJobRepo, c RateFetcher, cfg config.Config) {
@@ -95,8 +100,15 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 	resp := openapi.QuoteUpdateResponse{UpdateId: id}
 	writeJSON(w, http.StatusAccepted, resp)
 
-	// In gRPC mode, trigger background fetch via gRPC and persist results.
-	if s.cfg.WorkerType == "grpc" && s.grpcClient != nil && s.quoteRepo != nil && s.jobRepo != nil {
+	// In-Process chan mode: enqueue to channel if available.
+	if s.enqueue != nil {
+		traceID := getTraceIDFromContext(r.Context())
+		if err := s.enqueue(r.Context(), id, body.Pair, traceID); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "queue busy")
+			return
+		}
+		// In gRPC mode, trigger background fetch via gRPC and persist results.
+	} else if s.cfg.WorkerType == "grpc" && s.grpcClient != nil && s.quoteRepo != nil && s.jobRepo != nil {
 		traceID := getTraceIDFromContext(r.Context())
 		pair := body.Pair
 		updateID := id

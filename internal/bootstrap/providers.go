@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -44,6 +45,38 @@ func atoiDef(s string, def int) int {
 func ProvideLogger() *zap.Logger { return logx.L() }
 
 func ProvideConfig() config.Config { return config.Load() }
+
+type ChanBus struct {
+	Ch       chan worker.UpdateMsg
+	Enqueue  func(ctx context.Context, id, pair, traceID string) error
+	Shutdown func()
+}
+
+func ProvideChanBus(cfg config.Config) *ChanBus {
+	qSize := cfg.ChanQueueSize
+	ch := make(chan worker.UpdateMsg, qSize)
+	return &ChanBus{
+		Ch: ch,
+		Enqueue: func(ctx context.Context, id, pair, traceID string) error {
+			select {
+			case ch <- worker.UpdateMsg{ID: id, Pair: pair, TraceID: traceID}:
+				return nil
+			default:
+				t := time.NewTimer(50 * time.Millisecond)
+				defer t.Stop()
+				select {
+				case ch <- worker.UpdateMsg{ID: id, Pair: pair, TraceID: traceID}:
+					return nil
+				case <-t.C:
+					return fmt.Errorf("queue full")
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		},
+		Shutdown: func() { close(ch) },
+	}
+}
 
 func ProvideDB(ctx context.Context, log *zap.Logger, cfg config.Config) (*pg.DB, func(), error) {
 	dbURL := cfg.DatabaseURL
