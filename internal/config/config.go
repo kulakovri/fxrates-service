@@ -12,7 +12,6 @@ type Config struct {
 	LogLevel string
 	// API
 	Port        string
-	Storage     string
 	DatabaseURL string
 	// HTTP server
 	ShutdownTimeout time.Duration
@@ -63,7 +62,6 @@ func Load() Config {
 		Env:                getEnv("ENV", "local"),
 		LogLevel:           getEnv("LOG_LEVEL", "info"),
 		Port:               getEnv("PORT", "8080"),
-		Storage:            getEnv("STORAGE", "pg"),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		ShutdownTimeout:    time.Duration(atoiDef(getEnv("SHUTDOWN_TIMEOUT_MS", "10000"), 10000)) * time.Millisecond,
 		Provider:           getEnv("PROVIDER", "fake"),
