@@ -2,6 +2,10 @@
 
 Asynchronous FX rates microservice in Go 1.22 (Clean Architecture).
 
+## Documentation
+
+- [Architecture Overview](docs/ARCHITECTURE.md)
+
 ## Configuration
 
 - Supported currency pairs are limited to combinations of `USD`, `EUR`, and `MXN`. Requests outside this set return `ErrUnsupportedPair`.
