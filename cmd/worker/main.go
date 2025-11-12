@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"fxrates-service/internal/bootstrap"
+	"fxrates-service/internal/config"
 	"fxrates-service/internal/infrastructure/logx"
 	"go.uber.org/zap"
 )
@@ -11,19 +12,25 @@ import (
 func main() {
 	log := logx.L()
 	ctx := context.Background()
-	w, run, cleanup, err := bootstrap.InitWorker(ctx)
-	if err != nil {
-		log.Fatal("init worker", zap.Error(err))
-	}
-	defer cleanup()
-	switch {
-	case run != nil:
+	switch config.Load().WorkerType {
+	case "grpc":
+		run, cleanup, err := bootstrap.InitGRPCRunner(ctx)
+		if err != nil {
+			log.Fatal("init grpc runner", zap.Error(err))
+		}
+		defer cleanup()
 		if err := run(ctx); err != nil {
 			log.Fatal("grpc worker server exited", zap.Error(err))
 		}
-	case w != nil:
-		w.Start(ctx)
 	default:
-		log.Fatal("no worker configured (WORKER_TYPE)", zap.Error(err))
+		w, cleanup, err := bootstrap.InitDBWorker(ctx)
+		if err != nil {
+			log.Fatal("init db worker", zap.Error(err))
+		}
+		defer cleanup()
+		if w == nil {
+			log.Fatal("no worker configured (WORKER_TYPE)", zap.Error(err))
+		}
+		w.Start(ctx)
 	}
 }

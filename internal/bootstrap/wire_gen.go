@@ -9,9 +9,7 @@ package bootstrap
 import (
 	"context"
 	"fxrates-service/internal/application"
-	httpserver "fxrates-service/internal/infrastructure/http"
-	"fxrates-service/internal/infrastructure/worker"
-
+	"fxrates-service/internal/infrastructure/http"
 	"github.com/google/wire"
 )
 
@@ -37,75 +35,54 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 		return nil, nil, err
 	}
 	services := ProvideIdempotency(client, config)
-	uow := ProvideUoW(db)
-	fxRatesService := ProvideFXRatesService(repos, rateProvider, services, uow)
-	grpcClient, cleanup3, err := ProvideGRPCRateClient(config)
-	if err != nil {
+	unitOfWork := ProvideUoW(db)
+	fxRatesService := ProvideFXRatesService(repos, rateProvider, services, unitOfWork)
+	server := httpserver.NewServer(fxRatesService)
+	return server, func() {
 		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// DB Worker injector: builds application.Worker + Cleanup
+func InitDBWorker(ctx context.Context) (application.Worker, func(), error) {
+	logger := ProvideLogger()
+	config := ProvideConfig()
+	db, cleanup, err := ProvideDB(ctx, logger, config)
+	if err != nil {
+		return nil, nil, err
+	}
+	repos := ProvideRepos(db)
+	rateProvider, err := ProvideRateProvider(config)
+	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	server := httpserver.NewServer(fxRatesService)
-	// Set DB readiness check for /readyz
-	server.SetReadyCheck(func(ctx context.Context) error {
-		return db.Ping(ctx)
-	})
-	// Attach optional gRPC background client when in grpc mode
-	server.AttachGRPCBackground(grpcClient, config)
-	// If chan mode, wire channel bus and start workers in-process
-	var finalCleanup = func() {
-		cleanup3()
-		cleanup2()
-		cleanup()
-	}
-	if config.WorkerType == "chan" {
-		bus := ProvideChanBus(config)
-		for i := 0; i < config.ChanConcurrency; i++ {
-			go worker.NewChanWorker(fxRatesService, bus.Ch).Start(ctx)
-		}
-		server.SetEnqueuer(bus.Enqueue)
-		orig := finalCleanup
-		finalCleanup = func() {
-			bus.Shutdown()
-			orig()
-		}
-	}
-	return server, func() { finalCleanup() }, nil
-}
-
-// Worker injector: builds application.Worker or gRPC server runner + Cleanup
-func InitWorker(ctx context.Context) (application.Worker, func(context.Context) error, func(), error) {
-	logger := ProvideLogger()
-	config := ProvideConfig()
-	// gRPC server runner path (no DB on worker)
-	rateProvider, err := ProvideRateProvider(config)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	// gRPC server runner path
-	fxRatesService := application.NewService(nil, nil, rateProvider, nil)
-	if runner, ok := ProvideGRPCRateServerRunner(config, fxRatesService, logger); ok {
-		return nil, runner, func() {
-		}, nil
-	}
-	// DB worker path
-	db, cleanup, err := ProvideDB(ctx, logger, config)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	repos := ProvideRepos(db)
 	client, cleanup2, err := ProvideRedisClient(config)
 	if err != nil {
 		cleanup()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	services := ProvideIdempotency(client, config)
-	uow2 := ProvideUoW(db)
-	fxRatesService = ProvideFXRatesService(repos, rateProvider, services, uow2)
+	unitOfWork := ProvideUoW(db)
+	fxRatesService := ProvideFXRatesService(repos, rateProvider, services, unitOfWork)
 	worker := ProvideWorker(fxRatesService, rateProvider, logger, config)
-	return worker, nil, func() {
+	return worker, func() {
 		cleanup2()
 		cleanup()
+	}, nil
+}
+
+// gRPC Runner injector: builds gRPC server runner + Cleanup
+func InitGRPCRunner(ctx context.Context) (func(context.Context) error, func(), error) {
+	config := ProvideConfig()
+	rateProvider, err := ProvideRateProvider(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	logger := ProvideLogger()
+	v := ProvideGRPCRateServerRunner(config, rateProvider, logger)
+	return v, func() {
 	}, nil
 }
 
@@ -116,10 +93,10 @@ var infraSet = wire.NewSet(
 	ProvideConfig,
 	ProvideDB,
 	ProvideRepos,
+	ProvideUoW,
 	ProvideRedisClient,
 	ProvideIdempotency,
 	ProvideRateProvider,
 	ProvideFXRatesService,
-	ProvideUoW,
 	ProvideGRPCRateClient,
 )

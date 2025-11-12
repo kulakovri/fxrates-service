@@ -164,15 +164,14 @@ func ProvideGRPCRateClient(cfg config.Config) (*rateclient.Client, func(), error
 
 // ProvideGRPCRateServerRunner returns a runner to start the gRPC worker server when WORKER_TYPE=grpc.
 // The bool indicates whether the runner is enabled.
-func ProvideGRPCRateServerRunner(cfg config.Config, svc *application.FXRatesService, log *zap.Logger) (func(ctx context.Context) error, bool) {
-	if cfg.WorkerType != "grpc" {
-		return nil, false
-	}
+func ProvideGRPCRateServerRunner(cfg config.Config, rp application.RateProvider, log *zap.Logger) func(ctx context.Context) error {
 	addr := cfg.GRPCAddr
 	return func(ctx context.Context) error {
+		// Build a minimal service for fetch-only gRPC without DB dependencies.
+		svc := application.NewService(nil, nil, rp, nil)
 		s := grpcserver.NewServer(svc, log)
 		return grpcserver.RunServer(ctx, addr, s, log)
-	}, true
+	}
 }
 
 func ProvideWorker(svc *application.FXRatesService, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
