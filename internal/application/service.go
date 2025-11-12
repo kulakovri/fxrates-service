@@ -99,18 +99,6 @@ func (s *FXRatesService) FetchRate(ctx context.Context, pair string) (domain.Quo
 	return s.rateProvider.Get(ctx, pair)
 }
 
-// ProcessQuoteUpdateByPair fetches quote by pair using the internal provider and persists results.
-func (s *FXRatesService) ProcessQuoteUpdateByPair(
-	ctx context.Context,
-	updateID string,
-	pair string,
-	source string,
-) error {
-	return s.ProcessQuoteUpdate(ctx, updateID, func(c context.Context) (domain.Quote, error) {
-		return s.FetchRate(c, pair)
-	}, source)
-}
-
 // ProcessQuoteUpdate performs background processing to fetch a quote and persist results.
 // The fetch function abstracts the transport and must return a complete domain.Quote.
 func (s *FXRatesService) ProcessQuoteUpdate(
@@ -154,7 +142,9 @@ func (s *FXRatesService) ProcessQueueBatch(
 	var firstErr error
 	for _, j := range jobs {
 		_ = s.updateJobRepo.UpdateStatus(ctx, j.ID, domain.QuoteUpdateStatusProcessing, nil)
-		err := s.ProcessQuoteUpdateByPair(ctx, j.ID, j.Pair, "db")
+		err := s.ProcessQuoteUpdate(ctx, j.ID, func(c context.Context) (domain.Quote, error) {
+			return s.FetchRate(c, j.Pair)
+		}, "db")
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
