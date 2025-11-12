@@ -21,6 +21,7 @@ type FXRatesService struct {
 	quoteRepo     QuoteRepo
 	updateJobRepo UpdateJobRepo
 	rateProvider  RateProvider
+	uow           UnitOfWork
 
 	now   ClockFunc
 	newID IDGenFunc
@@ -29,12 +30,14 @@ type FXRatesService struct {
 
 func WithClock(f ClockFunc) Option { return func(s *FXRatesService) { s.now = f } }
 func WithIDGen(f IDGenFunc) Option { return func(s *FXRatesService) { s.newID = f } }
+func WithUoW(u UnitOfWork) Option  { return func(s *FXRatesService) { s.uow = u } }
 
 func NewService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, idem IdempotencyStore, opts ...Option) *FXRatesService {
 	s := &FXRatesService{
 		quoteRepo:     quoteRepo,
 		updateJobRepo: updateJobRepo,
 		rateProvider:  rateProvider,
+		uow:           NoopUoW{},
 		now:           time.Now,
 		newID:         func() string { return uuid.NewString() },
 	}
@@ -113,20 +116,25 @@ func (s *FXRatesService) ProcessQuoteUpdate(
 		_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusFailed, &msg)
 		return err
 	}
-	_ = s.quoteRepo.AppendHistory(ctx, domain.QuoteHistory{
-		Pair:     q.Pair,
-		Price:    q.Price,
-		QuotedAt: q.UpdatedAt,
-		Source:   source,
-		UpdateID: &updateID,
+	return s.uow.Do(ctx, func(txCtx context.Context) error {
+		if err := s.quoteRepo.AppendHistory(txCtx, domain.QuoteHistory{
+			Pair:     q.Pair,
+			Price:    q.Price,
+			QuotedAt: q.UpdatedAt,
+			Source:   source,
+			UpdateID: &updateID,
+		}); err != nil {
+			return err
+		}
+		if err := s.quoteRepo.Upsert(txCtx, domain.Quote{
+			Pair:      q.Pair,
+			Price:     q.Price,
+			UpdatedAt: q.UpdatedAt,
+		}); err != nil {
+			return err
+		}
+		return s.updateJobRepo.UpdateStatus(txCtx, updateID, domain.QuoteUpdateStatusDone, nil)
 	})
-	_ = s.quoteRepo.Upsert(ctx, domain.Quote{
-		Pair:      q.Pair,
-		Price:     q.Price,
-		UpdatedAt: q.UpdatedAt,
-	})
-	_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusDone, nil)
-	return nil
 }
 
 // ProcessQueueBatch claims queued jobs and processes them using the service's RateProvider.

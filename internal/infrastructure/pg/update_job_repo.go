@@ -16,6 +16,13 @@ type UpdateJobRepo struct{ db *DB }
 
 func NewUpdateJobRepo(db *DB) *UpdateJobRepo { return &UpdateJobRepo{db: db} }
 
+func (r *UpdateJobRepo) exec(ctx context.Context) execer {
+	if tx := txFromCtx(ctx); tx != nil {
+		return tx
+	}
+	return r.db.Pool
+}
+
 func (r *UpdateJobRepo) CreateQueued(ctx context.Context, pair string, _ *string) (string, error) {
 	id := uuid.NewString()
 	const ins = `
@@ -29,7 +36,7 @@ func (r *UpdateJobRepo) CreateQueued(ctx context.Context, pair string, _ *string
 		zap.String("pair", pair),
 	)
 	log.Info("sql.exec_start")
-	tag, err := r.db.Pool.Exec(ctx, ins, id, pair)
+	tag, err := r.exec(ctx).Exec(ctx, ins, id, pair)
 	if err != nil {
 		log.Error("sql.exec_failed", zap.Error(err))
 		return "", err
@@ -67,7 +74,7 @@ func (r *UpdateJobRepo) GetByID(ctx context.Context, id string) (domain.QuoteUpd
 	var errMsg *string
 	var status string
 	var price *float64
-	err := r.db.Pool.QueryRow(ctx, q, id).Scan(&out.ID, &out.Pair, &status, &errMsg, &out.UpdatedAt, &price)
+	err := r.exec(ctx).QueryRow(ctx, q, id).Scan(&out.ID, &out.Pair, &status, &errMsg, &out.UpdatedAt, &price)
 	if errors.Is(err, pgx.ErrNoRows) {
 		log.Info("sql.query_no_rows")
 		return domain.QuoteUpdate{}, domain.ErrNotFound
@@ -124,7 +131,7 @@ func (r *UpdateJobRepo) UpdateStatus(ctx context.Context, id string, st domain.Q
 		log = log.With(zap.String("error", *errMsg))
 	}
 	log.Info("sql.exec_start")
-	tag, err := r.db.Pool.Exec(ctx, up, id, s, errMsg)
+	tag, err := r.exec(ctx).Exec(ctx, up, id, s, errMsg)
 	if err != nil {
 		log.Error("sql.exec_failed", zap.Error(err))
 		return err
@@ -153,7 +160,7 @@ func (r *UpdateJobRepo) ClaimQueued(ctx context.Context, limit int) ([]struct{ I
       WHERE q.id = cte.id
       RETURNING q.id, q.pair;
     `
-	rows, err := r.db.Pool.Query(ctx, q, limit)
+	rows, err := r.exec(ctx).Query(ctx, q, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -14,6 +14,13 @@ type QuoteRepo struct{ db *DB }
 
 func NewQuoteRepo(db *DB) *QuoteRepo { return &QuoteRepo{db: db} }
 
+func (r *QuoteRepo) exec(ctx context.Context) execer {
+	if tx := txFromCtx(ctx); tx != nil {
+		return tx
+	}
+	return r.db.Pool
+}
+
 func (r *QuoteRepo) GetLast(ctx context.Context, pair string) (domain.Quote, error) {
 	const q = `SELECT pair, price::float8, updated_at FROM quotes WHERE pair=$1`
 	log := logx.L().With(
@@ -24,7 +31,7 @@ func (r *QuoteRepo) GetLast(ctx context.Context, pair string) (domain.Quote, err
 	)
 	log.Info("sql.query_start")
 	var out domain.Quote
-	if err := r.db.Pool.QueryRow(ctx, q, pair).Scan(&out.Pair, &out.Price, &out.UpdatedAt); err != nil {
+	if err := r.exec(ctx).QueryRow(ctx, q, pair).Scan(&out.Pair, &out.Price, &out.UpdatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			log.Info("sql.query_no_rows")
 			return domain.Quote{}, domain.ErrNotFound
@@ -54,7 +61,7 @@ func (r *QuoteRepo) Upsert(ctx context.Context, q domain.Quote) error {
 		zap.Time("updated_at", q.UpdatedAt),
 	)
 	log.Info("sql.exec_start")
-	tag, err := r.db.Pool.Exec(ctx, up, q.Pair, q.Price, q.UpdatedAt)
+	tag, err := r.exec(ctx).Exec(ctx, up, q.Pair, q.Price, q.UpdatedAt)
 	if err != nil {
 		log.Error("sql.exec_failed", zap.Error(err))
 		return err
@@ -82,7 +89,7 @@ func (r *QuoteRepo) AppendHistory(ctx context.Context, h domain.QuoteHistory) er
 		log = log.With(zap.String("update_id", *h.UpdateID))
 	}
 	log.Info("sql.exec_start")
-	tag, err := r.db.Pool.Exec(ctx, insertHistory, h.Pair, h.Price, h.QuotedAt, h.Source, h.UpdateID)
+	tag, err := r.exec(ctx).Exec(ctx, insertHistory, h.Pair, h.Price, h.QuotedAt, h.Source, h.UpdateID)
 	if err != nil {
 		log.Error("sql.exec_failed", zap.Error(err))
 		return err

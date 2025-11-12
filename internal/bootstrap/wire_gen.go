@@ -37,7 +37,8 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 		return nil, nil, err
 	}
 	services := ProvideIdempotency(client, config)
-	fxRatesService := ProvideFXRatesService(repos, rateProvider, services)
+	uow := ProvideUoW(db)
+	fxRatesService := ProvideFXRatesService(repos, rateProvider, services, uow)
 	grpcClient, cleanup3, err := ProvideGRPCRateClient(config)
 	if err != nil {
 		cleanup2()
@@ -99,7 +100,8 @@ func InitWorker(ctx context.Context) (application.Worker, func(context.Context) 
 		return nil, nil, nil, err
 	}
 	services := ProvideIdempotency(client, config)
-	fxRatesService = ProvideFXRatesService(repos, rateProvider, services)
+	uow2 := ProvideUoW(db)
+	fxRatesService = ProvideFXRatesService(repos, rateProvider, services, uow2)
 	worker := ProvideWorker(fxRatesService, rateProvider, logger, config)
 	return worker, nil, func() {
 		cleanup2()
@@ -118,5 +120,6 @@ var infraSet = wire.NewSet(
 	ProvideIdempotency,
 	ProvideRateProvider,
 	ProvideFXRatesService,
+	ProvideUoW,
 	ProvideGRPCRateClient,
 )

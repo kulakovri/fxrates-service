@@ -107,6 +107,10 @@ func ProvideRepos(db *pg.DB) Repos {
 	}
 }
 
+func ProvideUoW(db *pg.DB) application.UnitOfWork {
+	return &pg.UnitOfWork{Pool: db.Pool}
+}
+
 func ProvideRedisClient(cfg config.Config) (*redis.Client, func(), error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
@@ -141,8 +145,8 @@ func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
 	}
 }
 
-func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services) *application.FXRatesService {
-	return application.NewService(r.QuoteRepo, r.JobRepo, rp, s.Idem)
+func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services, u application.UnitOfWork) *application.FXRatesService {
+	return application.NewService(r.QuoteRepo, r.JobRepo, rp, s.Idem, application.WithUoW(u))
 }
 
 // ProvideGRPCRateClient optionally dials the worker gRPC when WORKER_TYPE=grpc.
