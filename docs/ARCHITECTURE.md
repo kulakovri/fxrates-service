@@ -16,7 +16,7 @@ flowchart LR
 
   subgraph API[API Process]
 
-    A[HTTP Router\n/quotes/updates\n/quotes/updates/{id}\n/quotes/last]
+    A[HTTP Router\n/quotes/updates\n/quotes/updates/&#123;id&#125;\n/quotes/last]
 
     AE[Idempotency\n(X-Idempotency-Key → Redis TTL)]
 
@@ -146,7 +146,8 @@ sequenceDiagram
 
     W->>FX: fetch(pair)
 
-    W->>PG: INSERT quotes_history; UPSERT quotes
+    W->>PG: INSERT quotes_history
+    W->>PG: UPSERT quotes
 
     W->>PG: UPDATE quote_updates(status='done' or 'failed')
 
@@ -190,7 +191,8 @@ sequenceDiagram
 
     G->>FX: fetch(pair)
 
-    API->>PG: INSERT quotes_history; UPSERT quotes
+    API->>PG: INSERT quotes_history
+    API->>PG: UPSERT quotes
 
     API->>PG: UPDATE quote_updates(status='done' or 'failed')
 
@@ -234,7 +236,8 @@ sequenceDiagram
 
     CH->>FX: fetch(pair)
 
-    CH->>PG: INSERT quotes_history; UPSERT quotes
+    CH->>PG: INSERT quotes_history
+    CH->>PG: UPSERT quotes
 
     CH->>PG: UPDATE quote_updates(status='done' or 'failed')
 
@@ -252,7 +255,7 @@ graph TD
 
     D[redis:7]
 
-    A[api (WORKER_TYPE=grpc|db|chan)]
+    A[api WORKER_TYPE=db/grpc/chan]
 
     W1[worker #1]
 
