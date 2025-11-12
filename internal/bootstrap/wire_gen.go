@@ -60,12 +60,7 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	if config.WorkerType == "chan" {
 		bus := ProvideChanBus(config)
 		for i := 0; i < config.ChanConcurrency; i++ {
-			go (&worker.ChanWorker{
-				Jobs:     bus.Ch,
-				Provider: rateProvider,
-				Quotes:   repos.QuoteRepo,
-				JobsRepo: repos.JobRepo,
-			}).Start(ctx)
+			go worker.NewChanWorker(fxRatesService, rateProvider, bus.Ch).Start(ctx)
 		}
 		server.SetEnqueuer(bus.Enqueue)
 		orig := finalCleanup
@@ -87,7 +82,8 @@ func InitWorker(ctx context.Context) (application.Worker, func(context.Context) 
 		return nil, nil, nil, err
 	}
 	// gRPC server runner path
-	if runner, ok := ProvideGRPCRateServerRunner(config, rateProvider, logger); ok {
+	fxRatesService := application.NewFXRatesService(nil, nil, rateProvider, application.NoopIdempotency{})
+	if runner, ok := ProvideGRPCRateServerRunner(config, fxRatesService, logger); ok {
 		return nil, runner, func() {
 		}, nil
 	}
@@ -97,8 +93,16 @@ func InitWorker(ctx context.Context) (application.Worker, func(context.Context) 
 		return nil, nil, nil, err
 	}
 	repos := ProvideRepos(db)
-	worker := ProvideWorker(repos, rateProvider, logger, config)
+	client, cleanup2, err := ProvideRedisClient(config)
+	if err != nil {
+		cleanup()
+		return nil, nil, nil, err
+	}
+	services := ProvideIdempotency(client, config)
+	fxRatesService = ProvideFXRatesService(repos, rateProvider, services)
+	worker := ProvideWorker(fxRatesService, rateProvider, logger, config)
 	return worker, nil, func() {
+		cleanup2()
 		cleanup()
 	}, nil
 }

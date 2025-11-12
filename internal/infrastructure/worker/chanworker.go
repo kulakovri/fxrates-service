@@ -19,10 +19,13 @@ type UpdateMsg struct {
 }
 
 type ChanWorker struct {
-	Jobs     <-chan UpdateMsg
-	Provider application.RateProvider
-	Quotes   application.QuoteRepo
-	JobsRepo application.UpdateJobRepo
+	svc      *application.FXRatesService
+	provider application.RateProvider
+	jobs     <-chan UpdateMsg
+}
+
+func NewChanWorker(svc *application.FXRatesService, provider application.RateProvider, jobs <-chan UpdateMsg) *ChanWorker {
+	return &ChanWorker{svc: svc, provider: provider, jobs: jobs}
 }
 
 func (w *ChanWorker) Start(ctx context.Context) {
@@ -32,7 +35,7 @@ func (w *ChanWorker) Start(ctx context.Context) {
 		case <-ctx.Done():
 			log.Info("chan_worker.stop")
 			return
-		case m, ok := <-w.Jobs:
+		case m, ok := <-w.jobs:
 			if !ok {
 				log.Info("chan_worker.closed")
 				return
@@ -47,37 +50,14 @@ func (w *ChanWorker) processOne(ctx context.Context, m UpdateMsg) {
 		if r := recover(); r != nil {
 			logx.L().Warn("chan_worker.panic", zap.Any("r", r))
 			msg := fmt.Sprint(r)
-			_ = w.JobsRepo.UpdateStatus(ctx, m.ID, domain.QuoteUpdateStatusFailed, &msg)
+			_ = w.svc.ProcessQuoteUpdate(ctx, m.ID, func(context.Context) (domain.Quote, error) {
+				return domain.Quote{}, fmt.Errorf("panic: %s", msg)
+			}, "chan")
 		}
 	}()
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	log := logx.L().With(
-		zap.String("update_id", m.ID),
-		zap.String("pair", m.Pair),
-		zap.String("trace_id", m.TraceID),
-	)
-	// Optional: mark processing for visibility
-	_ = w.JobsRepo.UpdateStatus(c, m.ID, domain.QuoteUpdateStatusProcessing, nil)
-
-	q, err := w.Provider.Get(c, m.Pair)
-	if err != nil {
-		msg := err.Error()
-		_ = w.JobsRepo.UpdateStatus(c, m.ID, domain.QuoteUpdateStatusFailed, &msg)
-		log.Warn("chan_worker.fetch_failed", zap.Error(err))
-		return
-	}
-
-	_ = w.Quotes.AppendHistory(c, domain.QuoteHistory{
-		Pair:     q.Pair,
-		Price:    q.Price,
-		QuotedAt: q.UpdatedAt,
-		Source:   "chan",
-		UpdateID: &m.ID,
-	})
-	_ = w.Quotes.Upsert(c, q)
-
-	now := time.Now().UTC()
-	_ = w.JobsRepo.UpdateStatus(c, m.ID, domain.QuoteUpdateStatusDone, nil)
-	log.Info("chan_worker.done", zap.Time("updated_at", now))
+	_ = w.svc.ProcessQuoteUpdate(c, m.ID, func(cx context.Context) (domain.Quote, error) {
+		return w.provider.Get(cx, m.Pair)
+	}, "chan")
 }

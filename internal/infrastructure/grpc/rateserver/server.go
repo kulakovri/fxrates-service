@@ -11,21 +11,26 @@ import (
 )
 
 type Server struct {
-	RP  application.RateProvider
-	Log *zap.Logger
+	svc application.QuoteFetcher
+	log *zap.Logger
 	ratepb.UnimplementedRateServiceServer
 }
 
-func (s *Server) Fetch(ctx context.Context, req *ratepb.FetchRequest) (*ratepb.FetchResponse, error) {
-	log := s.Log
+// NewServer wires a fetch-only gRPC server that delegates to the application service.
+func NewServer(svc application.QuoteFetcher, log *zap.Logger) *Server {
 	if log == nil {
 		log = zap.NewNop()
 	}
+	return &Server{svc: svc, log: log}
+}
+
+func (s *Server) Fetch(ctx context.Context, req *ratepb.FetchRequest) (*ratepb.FetchResponse, error) {
+	log := s.log
 	pair := req.GetPair()
 	traceID := req.GetTraceId()
 	log = log.With(zap.String("pair", pair), zap.String("trace_id", traceID))
 
-	q, err := s.RP.Get(ctx, pair)
+	q, err := s.svc.FetchQuote(ctx, pair)
 	if err != nil {
 		log.Warn("grpc_fetch.provider_error", zap.Error(err))
 		return nil, err

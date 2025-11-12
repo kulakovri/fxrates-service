@@ -89,20 +89,35 @@ func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.
 	return q, nil
 }
 
-// ProcessGRPCUpdate performs background processing to fetch a quote and persist results.
-// The fetch function abstracts the transport (e.g., gRPC) and must return a complete domain.Quote.
-func (s *FXRatesService) ProcessGRPCUpdate(ctx context.Context, updateID, pair string, fetch func(context.Context) (domain.Quote, error)) {
+// QuoteFetcher is a small facade to fetch quotes via the service without exposing ports.
+type QuoteFetcher interface {
+	FetchQuote(ctx context.Context, pair string) (domain.Quote, error)
+}
+
+// FetchQuote delegates quote fetching to the provider.
+func (s *FXRatesService) FetchQuote(ctx context.Context, pair string) (domain.Quote, error) {
+	return s.rateProvider.Get(ctx, pair)
+}
+
+// ProcessQuoteUpdate performs background processing to fetch a quote and persist results.
+// The fetch function abstracts the transport and must return a complete domain.Quote.
+func (s *FXRatesService) ProcessQuoteUpdate(
+	ctx context.Context,
+	updateID string,
+	fetch func(context.Context) (domain.Quote, error),
+	source string,
+) error {
 	q, err := fetch(ctx)
 	if err != nil {
 		msg := err.Error()
 		_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusFailed, &msg)
-		return
+		return err
 	}
 	_ = s.quoteRepo.AppendHistory(ctx, domain.QuoteHistory{
 		Pair:     q.Pair,
 		Price:    q.Price,
 		QuotedAt: q.UpdatedAt,
-		Source:   "grpc",
+		Source:   source,
 		UpdateID: &updateID,
 	})
 	_ = s.quoteRepo.Upsert(ctx, domain.Quote{
@@ -111,4 +126,29 @@ func (s *FXRatesService) ProcessGRPCUpdate(ctx context.Context, updateID, pair s
 		UpdatedAt: q.UpdatedAt,
 	})
 	_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusDone, nil)
+	return nil
+}
+
+// ProcessQueueBatch claims queued jobs and processes them using the provided RateProvider.
+// Best-effort: errors are aggregated and returned as a single error if any occurred.
+func (s *FXRatesService) ProcessQueueBatch(
+	ctx context.Context,
+	provider RateProvider,
+	batchLimit int,
+) error {
+	jobs, err := s.updateJobRepo.ClaimQueued(ctx, batchLimit)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, j := range jobs {
+		_ = s.updateJobRepo.UpdateStatus(ctx, j.ID, domain.QuoteUpdateStatusProcessing, nil)
+		err := s.ProcessQuoteUpdate(ctx, j.ID, func(c context.Context) (domain.Quote, error) {
+			return provider.Get(c, j.Pair)
+		}, "db")
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }

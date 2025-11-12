@@ -113,7 +113,7 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		pair := body.Pair
 		updateID := id
 		timeout := s.cfg.RequestTimeout
-		go s.svc.ProcessGRPCUpdate(context.Background(), updateID, pair, func(ctx context.Context) (domain.Quote, error) {
+		go s.svc.ProcessQuoteUpdate(context.Background(), updateID, func(ctx context.Context) (domain.Quote, error) {
 			l := logx.L().With(zap.String("trace_id", traceID), zap.String("pair", pair), zap.String("update_id", updateID))
 			res, err := s.grpcClient.Fetch(ctx, pair, traceID, timeout)
 			if err != nil {
@@ -130,7 +130,7 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 				Price:     res.GetPrice(),
 				UpdatedAt: t,
 			}, nil
-		})
+		}, "grpc")
 	}
 }
 

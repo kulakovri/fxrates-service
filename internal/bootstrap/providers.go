@@ -160,28 +160,21 @@ func ProvideGRPCRateClient(cfg config.Config) (*rateclient.Client, func(), error
 
 // ProvideGRPCRateServerRunner returns a runner to start the gRPC worker server when WORKER_TYPE=grpc.
 // The bool indicates whether the runner is enabled.
-func ProvideGRPCRateServerRunner(cfg config.Config, rp application.RateProvider, log *zap.Logger) (func(ctx context.Context) error, bool) {
+func ProvideGRPCRateServerRunner(cfg config.Config, svc *application.FXRatesService, log *zap.Logger) (func(ctx context.Context) error, bool) {
 	if cfg.WorkerType != "grpc" {
 		return nil, false
 	}
 	addr := cfg.GRPCAddr
 	return func(ctx context.Context) error {
-		s := &grpcserver.Server{RP: rp, Log: log}
+		s := grpcserver.NewServer(svc, log)
 		return grpcserver.RunServer(ctx, addr, s, log)
 	}, true
 }
 
-func ProvideWorker(r Repos, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
+func ProvideWorker(svc *application.FXRatesService, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
 	switch cfg.WorkerType {
 	case "db":
-		return &worker.DbWorker{
-			Jobs:       r.JobRepo,
-			Quotes:     r.QuoteRepo,
-			Provider:   rp,
-			PollEvery:  cfg.WorkerPoll,
-			BatchLimit: cfg.WorkerBatchSize,
-			Log:        log,
-		}
+		return worker.NewDBWorker(svc, rp, cfg.WorkerPoll, cfg.WorkerBatchSize, log)
 	default:
 		if log != nil {
 			log.Error("unknown WORKER_TYPE; no worker launched")

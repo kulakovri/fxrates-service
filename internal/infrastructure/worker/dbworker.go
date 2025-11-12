@@ -6,7 +6,6 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
-	"fxrates-service/internal/domain"
 
 	"go.uber.org/zap"
 )
@@ -14,13 +13,22 @@ import (
 var _ application.Worker = (*DbWorker)(nil)
 
 type DbWorker struct {
-	Jobs     application.UpdateJobRepo
-	Quotes   application.QuoteRepo
-	Provider application.RateProvider
+	svc      *application.FXRatesService
+	provider application.RateProvider
 
 	PollEvery  time.Duration
 	BatchLimit int
 	Log        *zap.Logger
+}
+
+func NewDBWorker(svc *application.FXRatesService, provider application.RateProvider, pollEvery time.Duration, batchLimit int, log *zap.Logger) *DbWorker {
+	return &DbWorker{
+		svc:        svc,
+		provider:   provider,
+		PollEvery:  pollEvery,
+		BatchLimit: batchLimit,
+		Log:        log,
+	}
 }
 
 func (w *DbWorker) Start(ctx context.Context) {
@@ -51,38 +59,7 @@ func (w *DbWorker) Start(ctx context.Context) {
 }
 
 func (w *DbWorker) tick(ctx context.Context, log *zap.Logger) {
-	jobs, err := w.Jobs.ClaimQueued(ctx, w.BatchLimit)
-	if err != nil {
-		log.Warn("claim_failed", zap.Error(err))
-		return
+	if err := w.svc.ProcessQueueBatch(ctx, w.provider, w.BatchLimit); err != nil {
+		log.Warn("batch_error", zap.Error(err))
 	}
-	for _, j := range jobs {
-		w.processOne(ctx, log, j.ID, j.Pair)
-	}
-}
-
-func (w *DbWorker) processOne(ctx context.Context, log *zap.Logger, id, pair string) {
-	quote, err := w.Provider.Get(ctx, pair)
-	if err != nil {
-		msg := err.Error()
-		_ = w.Jobs.UpdateStatus(ctx, id, domain.QuoteUpdateStatusFailed, &msg)
-		log.Warn("update_failed", zap.String("id", id), zap.String("pair", pair), zap.Error(err))
-		return
-	}
-
-	_ = w.Quotes.AppendHistory(ctx, domain.QuoteHistory{
-		Pair:     quote.Pair,
-		Price:    quote.Price,
-		QuotedAt: quote.UpdatedAt,
-		Source:   "provider",
-		UpdateID: &id,
-	})
-	_ = w.Quotes.Upsert(ctx, domain.Quote{
-		Pair:      quote.Pair,
-		Price:     quote.Price,
-		UpdatedAt: quote.UpdatedAt,
-	})
-	_ = w.Jobs.UpdateStatus(ctx, id, domain.QuoteUpdateStatusDone, nil)
-
-	log.Info("update_done", zap.String("id", id), zap.String("pair", pair))
 }
