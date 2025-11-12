@@ -7,6 +7,7 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/domain"
+	redisstore "fxrates-service/internal/infrastructure/redis"
 	"sync"
 )
 
@@ -132,7 +133,7 @@ func NewInMemoryService() (*application.FXRatesService, *fakeQuoteRepo, *fakeUpd
 	qr := &fakeQuoteRepo{store: map[string]domain.Quote{}}
 	ur := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
 	rp := fakeRateProvider{}
-	return application.NewService(qr, ur, rp, application.NoopIdempotency{}), qr, ur, rp
+	return application.NewService(qr, ur, rp, redisstore.NoopIdempotency{}), qr, ur, rp
 }
 
 func NewInMemoryRepos() (application.QuoteRepo, application.UpdateJobRepo, application.RateProvider) {

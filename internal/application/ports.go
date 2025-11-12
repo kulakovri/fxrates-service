@@ -22,3 +22,8 @@ type UpdateJobRepo interface {
 type RateProvider interface {
 	Get(ctx context.Context, pair string) (domain.Quote, error)
 }
+
+// IdempotencyStore handles short-lived request deduplication.
+type IdempotencyStore interface {
+	TryReserve(ctx context.Context, key string) (bool, error)
+}

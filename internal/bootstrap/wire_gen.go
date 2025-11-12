@@ -83,7 +83,7 @@ func InitWorker(ctx context.Context) (application.Worker, func(context.Context) 
 		return nil, nil, nil, err
 	}
 	// gRPC server runner path
-	fxRatesService := application.NewService(nil, nil, rateProvider, application.NoopIdempotency{})
+	fxRatesService := application.NewService(nil, nil, rateProvider, nil)
 	if runner, ok := ProvideGRPCRateServerRunner(config, fxRatesService, logger); ok {
 		return nil, runner, func() {
 		}, nil

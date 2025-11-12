@@ -43,8 +43,6 @@ func NewService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider R
 	}
 	if idem != nil {
 		s.idem = idem
-	} else {
-		s.idem = NoopIdempotency{}
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -56,7 +54,13 @@ func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, id
 	if idem == nil || *idem == "" {
 		return "", ErrBadRequest
 	}
-	ok, err := s.idem.TryReserve(ctx, *idem)
+	var ok bool
+	var err error
+	if s.idem != nil {
+		ok, err = s.idem.TryReserve(ctx, *idem)
+	} else {
+		ok = true
+	}
 	if err != nil {
 		return "", err
 	}
