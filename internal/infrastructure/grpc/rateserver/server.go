@@ -30,7 +30,7 @@ func (s *Server) Fetch(ctx context.Context, req *ratepb.FetchRequest) (*ratepb.F
 	traceID := req.GetTraceId()
 	log = log.With(zap.String("pair", pair), zap.String("trace_id", traceID))
 
-	q, err := s.svc.FetchQuote(ctx, pair)
+	q, err := s.svc.FetchRate(ctx, pair)
 	if err != nil {
 		log.Warn("grpc_fetch.provider_error", zap.Error(err))
 		return nil, err

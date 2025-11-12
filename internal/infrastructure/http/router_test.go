@@ -163,7 +163,7 @@ func (m *memIdem) TryReserve(_ context.Context, k string) (bool, error) {
 func TestRequestQuoteUpdate_IdempotencyConflict_HTTP(t *testing.T) {
 	qr, ur, rp := NewInMemoryRepos()
 	idem := &memIdem{}
-	svc := application.NewFXRatesService(qr, ur, rp, idem)
+	svc := application.NewService(qr, ur, rp, idem)
 	srv := NewServer(svc)
 	h := NewRouter(srv)
 

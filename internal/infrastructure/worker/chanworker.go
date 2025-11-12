@@ -56,5 +56,7 @@ func (w *ChanWorker) processOne(ctx context.Context, m UpdateMsg) {
 	}()
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_ = w.svc.ProcessQuoteUpdateByPair(c, m.ID, m.Pair, "chan")
+	_ = w.svc.ProcessQuoteUpdate(c, m.ID, func(cx context.Context) (domain.Quote, error) {
+		return w.svc.FetchRate(cx, m.Pair)
+	}, "chan")
 }

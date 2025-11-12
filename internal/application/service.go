@@ -30,7 +30,7 @@ type FXRatesService struct {
 func WithClock(f ClockFunc) Option { return func(s *FXRatesService) { s.now = f } }
 func WithIDGen(f IDGenFunc) Option { return func(s *FXRatesService) { s.newID = f } }
 
-func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, idem IdempotencyStore, opts ...Option) *FXRatesService {
+func NewService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, idem IdempotencyStore, opts ...Option) *FXRatesService {
 	s := &FXRatesService{
 		quoteRepo:     quoteRepo,
 		updateJobRepo: updateJobRepo,
@@ -91,11 +91,11 @@ func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.
 
 // QuoteFetcher is a small facade to fetch quotes via the service without exposing ports.
 type QuoteFetcher interface {
-	FetchQuote(ctx context.Context, pair string) (domain.Quote, error)
+	FetchRate(ctx context.Context, pair string) (domain.Quote, error)
 }
 
-// FetchQuote delegates quote fetching to the provider.
-func (s *FXRatesService) FetchQuote(ctx context.Context, pair string) (domain.Quote, error) {
+// FetchRate delegates quote fetching to the provider.
+func (s *FXRatesService) FetchRate(ctx context.Context, pair string) (domain.Quote, error) {
 	return s.rateProvider.Get(ctx, pair)
 }
 
@@ -107,7 +107,7 @@ func (s *FXRatesService) ProcessQuoteUpdateByPair(
 	source string,
 ) error {
 	return s.ProcessQuoteUpdate(ctx, updateID, func(c context.Context) (domain.Quote, error) {
-		return s.rateProvider.Get(c, pair)
+		return s.FetchRate(c, pair)
 	}, source)
 }
 

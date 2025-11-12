@@ -13,7 +13,7 @@ import (
 func Test_RequestQuoteUpdate(t *testing.T) {
 	t.Parallel()
 	u := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
-	svc := NewFXRatesService(
+	svc := NewService(
 		&fakeQuoteRepo{store: map[string]domain.Quote{}},
 		u,
 		&fakeRateProvider{},
@@ -31,7 +31,7 @@ func Test_RequestQuoteUpdate(t *testing.T) {
 
 func Test_RequestQuoteUpdate_UnsupportedPair(t *testing.T) {
 	t.Parallel()
-	svc := NewFXRatesService(
+	svc := NewService(
 		&fakeQuoteRepo{store: map[string]domain.Quote{}},
 		&fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}},
 		&fakeRateProvider{},
@@ -50,7 +50,7 @@ func Test_GetQuoteUpdate_Found(t *testing.T) {
 			"update-1": {ID: "update-1", Pair: "EUR/USD", Status: domain.QuoteUpdateStatusQueued},
 		},
 	}
-	svc := NewFXRatesService(&fakeQuoteRepo{}, u, &fakeRateProvider{}, NoopIdempotency{})
+	svc := NewService(&fakeQuoteRepo{}, u, &fakeRateProvider{}, NoopIdempotency{})
 
 	got, err := svc.GetQuoteUpdate(context.Background(), "update-1")
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func Test_GetQuoteUpdate_Found(t *testing.T) {
 func Test_GetQuoteUpdate_NotFound(t *testing.T) {
 	t.Parallel()
 	u := &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}
-	svc := NewFXRatesService(&fakeQuoteRepo{}, u, &fakeRateProvider{}, NoopIdempotency{})
+	svc := NewService(&fakeQuoteRepo{}, u, &fakeRateProvider{}, NoopIdempotency{})
 
 	_, err := svc.GetQuoteUpdate(context.Background(), "nope")
 	require.Error(t, err)
@@ -75,7 +75,7 @@ func Test_GetLastQuote(t *testing.T) {
 			"EUR/USD": {Pair: "EUR/USD", Price: 1.1, UpdatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
-	svc := NewFXRatesService(qr, &fakeUpdateJobRepo{}, &fakeRateProvider{}, NoopIdempotency{})
+	svc := NewService(qr, &fakeUpdateJobRepo{}, &fakeRateProvider{}, NoopIdempotency{})
 
 	q, err := svc.GetLastQuote(context.Background(), "EUR/USD")
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func Test_GetLastQuote(t *testing.T) {
 
 func Test_GetLastQuote_UnsupportedPair(t *testing.T) {
 	t.Parallel()
-	svc := NewFXRatesService(&fakeQuoteRepo{}, &fakeUpdateJobRepo{}, &fakeRateProvider{}, NoopIdempotency{})
+	svc := NewService(&fakeQuoteRepo{}, &fakeUpdateJobRepo{}, &fakeRateProvider{}, NoopIdempotency{})
 
 	_, err := svc.GetLastQuote(context.Background(), "GBP/USD")
 	require.Error(t, err)

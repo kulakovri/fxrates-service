@@ -19,7 +19,7 @@ import (
 
 type fakeFetcher struct{}
 
-func (fakeFetcher) FetchQuote(_ context.Context, pair string) (domain.Quote, error) {
+func (fakeFetcher) FetchRate(_ context.Context, pair string) (domain.Quote, error) {
 	return domain.Quote{
 		Pair:      domain.Pair(pair),
 		Price:     1.2345,

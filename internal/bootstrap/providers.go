@@ -142,7 +142,7 @@ func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
 }
 
 func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services) *application.FXRatesService {
-	return application.NewFXRatesService(r.QuoteRepo, r.JobRepo, rp, s.Idem)
+	return application.NewService(r.QuoteRepo, r.JobRepo, rp, s.Idem)
 }
 
 // ProvideGRPCRateClient optionally dials the worker gRPC when WORKER_TYPE=grpc.
