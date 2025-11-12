@@ -16,7 +16,6 @@ import (
 )
 
 type fakeRateClient struct {
-	pair   string
 	price  float64
 	nowStr string
 }
@@ -35,7 +34,7 @@ func TestRequestQuoteUpdate_AsyncGRPCBackground(t *testing.T) {
 	srv := NewServer(svc)
 	// Attach fake gRPC client and repos with grpc mode config
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	srv.AttachGRPCBackground(qr, ur, &fakeRateClient{price: 2.5, nowStr: now}, config.Config{
+	srv.AttachGRPCBackground(&fakeRateClient{price: 2.5, nowStr: now}, config.Config{
 		WorkerType:     "grpc",
 		RequestTimeout: 2 * time.Second,
 	})

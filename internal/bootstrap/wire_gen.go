@@ -50,7 +50,7 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 		return db.Ping(ctx)
 	})
 	// Attach optional gRPC background client when in grpc mode
-	server.AttachGRPCBackground(repos.QuoteRepo, repos.JobRepo, grpcClient, config)
+	server.AttachGRPCBackground(grpcClient, config)
 	// If chan mode, wire channel bus and start workers in-process
 	var finalCleanup = func() {
 		cleanup3()
@@ -60,7 +60,7 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	if config.WorkerType == "chan" {
 		bus := ProvideChanBus(config)
 		for i := 0; i < config.ChanConcurrency; i++ {
-			go worker.NewChanWorker(fxRatesService, rateProvider, bus.Ch).Start(ctx)
+			go worker.NewChanWorker(fxRatesService, bus.Ch).Start(ctx)
 		}
 		server.SetEnqueuer(bus.Enqueue)
 		orig := finalCleanup

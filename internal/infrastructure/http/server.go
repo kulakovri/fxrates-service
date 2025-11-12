@@ -26,8 +26,6 @@ type RateFetcher interface {
 type Server struct {
 	svc        *application.FXRatesService
 	ping       func(context.Context) error
-	quoteRepo  application.QuoteRepo
-	jobRepo    application.UpdateJobRepo
 	grpcClient RateFetcher
 	cfg        config.Config
 	enqueue    func(ctx context.Context, id, pair, traceID string) error
@@ -42,9 +40,7 @@ func (s *Server) SetEnqueuer(fn func(context.Context, string, string, string) er
 }
 
 // AttachGRPCBackground enables async background processing via gRPC worker mode.
-func (s *Server) AttachGRPCBackground(q application.QuoteRepo, u application.UpdateJobRepo, c RateFetcher, cfg config.Config) {
-	s.quoteRepo = q
-	s.jobRepo = u
+func (s *Server) AttachGRPCBackground(c RateFetcher, cfg config.Config) {
 	s.grpcClient = c
 	s.cfg = cfg
 }
@@ -108,7 +104,7 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 			return
 		}
 		// In gRPC mode, trigger background fetch via gRPC and persist results.
-	} else if s.cfg.WorkerType == "grpc" && s.grpcClient != nil && s.quoteRepo != nil && s.jobRepo != nil {
+	} else if s.cfg.WorkerType == "grpc" && s.grpcClient != nil {
 		traceID := getTraceIDFromContext(r.Context())
 		pair := body.Pair
 		updateID := id

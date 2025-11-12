@@ -13,18 +13,16 @@ import (
 var _ application.Worker = (*DbWorker)(nil)
 
 type DbWorker struct {
-	svc      *application.FXRatesService
-	provider application.RateProvider
+	svc *application.FXRatesService
 
 	PollEvery  time.Duration
 	BatchLimit int
 	Log        *zap.Logger
 }
 
-func NewDBWorker(svc *application.FXRatesService, provider application.RateProvider, pollEvery time.Duration, batchLimit int, log *zap.Logger) *DbWorker {
+func NewDBWorker(svc *application.FXRatesService, pollEvery time.Duration, batchLimit int, log *zap.Logger) *DbWorker {
 	return &DbWorker{
 		svc:        svc,
-		provider:   provider,
 		PollEvery:  pollEvery,
 		BatchLimit: batchLimit,
 		Log:        log,
@@ -59,7 +57,7 @@ func (w *DbWorker) Start(ctx context.Context) {
 }
 
 func (w *DbWorker) tick(ctx context.Context, log *zap.Logger) {
-	if err := w.svc.ProcessQueueBatch(ctx, w.provider, w.BatchLimit); err != nil {
+	if err := w.svc.ProcessQueueBatch(ctx, w.BatchLimit); err != nil {
 		log.Warn("batch_error", zap.Error(err))
 	}
 }

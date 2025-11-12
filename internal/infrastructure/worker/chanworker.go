@@ -19,13 +19,12 @@ type UpdateMsg struct {
 }
 
 type ChanWorker struct {
-	svc      *application.FXRatesService
-	provider application.RateProvider
-	jobs     <-chan UpdateMsg
+	svc  *application.FXRatesService
+	jobs <-chan UpdateMsg
 }
 
-func NewChanWorker(svc *application.FXRatesService, provider application.RateProvider, jobs <-chan UpdateMsg) *ChanWorker {
-	return &ChanWorker{svc: svc, provider: provider, jobs: jobs}
+func NewChanWorker(svc *application.FXRatesService, jobs <-chan UpdateMsg) *ChanWorker {
+	return &ChanWorker{svc: svc, jobs: jobs}
 }
 
 func (w *ChanWorker) Start(ctx context.Context) {
@@ -57,7 +56,5 @@ func (w *ChanWorker) processOne(ctx context.Context, m UpdateMsg) {
 	}()
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_ = w.svc.ProcessQuoteUpdate(c, m.ID, func(cx context.Context) (domain.Quote, error) {
-		return w.provider.Get(cx, m.Pair)
-	}, "chan")
+	_ = w.svc.ProcessQuoteUpdateByPair(c, m.ID, m.Pair, "chan")
 }

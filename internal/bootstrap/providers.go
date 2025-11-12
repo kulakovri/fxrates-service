@@ -174,7 +174,7 @@ func ProvideGRPCRateServerRunner(cfg config.Config, svc *application.FXRatesServ
 func ProvideWorker(svc *application.FXRatesService, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
 	switch cfg.WorkerType {
 	case "db":
-		return worker.NewDBWorker(svc, rp, cfg.WorkerPoll, cfg.WorkerBatchSize, log)
+		return worker.NewDBWorker(svc, cfg.WorkerPoll, cfg.WorkerBatchSize, log)
 	default:
 		if log != nil {
 			log.Error("unknown WORKER_TYPE; no worker launched")
