@@ -49,14 +49,14 @@ func (w *ChanWorker) processOne(ctx context.Context, m UpdateMsg) {
 		if r := recover(); r != nil {
 			logx.L().Warn("chan_worker.panic", zap.Any("r", r))
 			msg := fmt.Sprint(r)
-			_ = w.svc.ProcessQuoteUpdate(ctx, m.ID, func(context.Context) (domain.Quote, error) {
+			_ = w.svc.CompleteQuoteUpdate(ctx, m.ID, func(context.Context) (domain.Quote, error) {
 				return domain.Quote{}, fmt.Errorf("panic: %s", msg)
 			}, "chan")
 		}
 	}()
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_ = w.svc.ProcessQuoteUpdate(c, m.ID, func(cx context.Context) (domain.Quote, error) {
-		return w.svc.FetchRate(cx, m.Pair)
+	_ = w.svc.CompleteQuoteUpdate(c, m.ID, func(cx context.Context) (domain.Quote, error) {
+		return w.svc.FetchQuote(cx, m.Pair)
 	}, "chan")
 }

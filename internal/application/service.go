@@ -98,17 +98,17 @@ func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.
 
 // QuoteFetcher is a small facade to fetch quotes via the service without exposing ports.
 type QuoteFetcher interface {
-	FetchRate(ctx context.Context, pair string) (domain.Quote, error)
+	FetchQuote(ctx context.Context, pair string) (domain.Quote, error)
 }
 
-// FetchRate delegates quote fetching to the provider.
-func (s *FXRatesService) FetchRate(ctx context.Context, pair string) (domain.Quote, error) {
+// FetchQuote delegates quote fetching to the provider.
+func (s *FXRatesService) FetchQuote(ctx context.Context, pair string) (domain.Quote, error) {
 	return s.rateProvider.Get(ctx, pair)
 }
 
-// ProcessQuoteUpdate performs background processing to fetch a quote and persist results.
+// CompleteQuoteUpdate performs background processing to fetch a quote and persist results.
 // The fetch function abstracts the transport and must return a complete domain.Quote.
-func (s *FXRatesService) ProcessQuoteUpdate(
+func (s *FXRatesService) CompleteQuoteUpdate(
 	ctx context.Context,
 	updateID string,
 	fetch func(context.Context) (domain.Quote, error),
@@ -154,8 +154,8 @@ func (s *FXRatesService) ProcessQueueBatch(
 	var firstErr error
 	for _, j := range jobs {
 		_ = s.updateJobRepo.UpdateStatus(ctx, j.ID, domain.QuoteUpdateStatusProcessing, nil)
-		err := s.ProcessQuoteUpdate(ctx, j.ID, func(c context.Context) (domain.Quote, error) {
-			return s.FetchRate(c, j.Pair)
+		err := s.CompleteQuoteUpdate(ctx, j.ID, func(c context.Context) (domain.Quote, error) {
+			return s.FetchQuote(c, j.Pair)
 		}, "db")
 		if err != nil && firstErr == nil {
 			firstErr = err

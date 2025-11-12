@@ -124,7 +124,7 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 				UpdatedAt: t,
 			}, nil
 		}
-		go s.svc.ProcessQuoteUpdate(context.Background(), updateID, fetchFn, "grpc")
+		go s.svc.CompleteQuoteUpdate(context.Background(), updateID, fetchFn, "grpc")
 	}
 }
 
