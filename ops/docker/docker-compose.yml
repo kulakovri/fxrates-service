@@ -1,3 +1,34 @@
+x-api-base: &api-base
+  image: fxrates:dev
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment: &api-base-env
+    PORT: "8080"
+    STORAGE: "pg"
+    DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
+    LOG_LEVEL: "info"
+    REDIS_ADDR: ${REDIS_ADDR}
+    REQUEST_TIMEOUT_MS: "3000"
+  ports:
+    - "8080:8080"
+
+x-worker-base: &worker-base
+  image: fxrates:dev
+  depends_on:
+    postgres:
+      condition: service_healthy
+  entrypoint: ["/usr/local/bin/worker"]
+  environment: &worker-base-env
+    STORAGE: "pg"
+    DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
+    PROVIDER: ${PROVIDER}
+    EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
+    EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
+    REDIS_ADDR: ${REDIS_ADDR}
+    WORKER_POLL_MS: "250"
+    WORKER_BATCH_LIMIT: "10"
+
 services:
   postgres:
     image: postgres:17
@@ -13,45 +44,52 @@ services:
       timeout: 3s
       retries: 20
 
-  api:
-    image: fxrates:dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      PORT: "8080"
-      STORAGE: "pg"
-      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
-      LOG_LEVEL: "info"
-      REDIS_ADDR: ${REDIS_ADDR}
-      WORKER_TYPE: "grpc" # db | grpc
-      GRPC_TARGET: "dns:///worker:9090"
-      REQUEST_TIMEOUT_MS: "3000"
-    ports:
-      - "8080:8080"
-
-  worker:
-    image: fxrates:dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-    entrypoint: ["/usr/local/bin/worker"]
-    environment:
-      STORAGE: "pg"
-      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
-      WORKER_TYPE: "grpc" # db | grpc
-      WORKER_POLL_MS: "250"
-      WORKER_BATCH_LIMIT: "10"
-      PROVIDER: ${PROVIDER}
-      EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
-      EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
-      REDIS_ADDR: ${REDIS_ADDR}
-      GRPC_ADDR: ":9090"
-    deploy:
-      replicas: 3
-
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  # chan profile: API only (in-process worker)
+  api-chan:
+    <<: *api-base
+    profiles: ["chan"]
+    environment:
+      <<: *api-base-env
+      WORKER_TYPE: "chan"
+
+  # db profile: API + DB polling workers
+  api-db:
+    <<: *api-base
+    profiles: ["db"]
+    environment:
+      <<: *api-base-env
+      WORKER_TYPE: "db"
+
+  worker-db:
+    <<: *worker-base
+    profiles: ["db"]
+    environment:
+      <<: *worker-base-env
+      WORKER_TYPE: "db"
+    deploy:
+      replicas: 3
+
+  # grpc profile: API + gRPC workers
+  api-grpc:
+    <<: *api-base
+    profiles: ["grpc"]
+    environment:
+      <<: *api-base-env
+      WORKER_TYPE: "grpc"
+      GRPC_TARGET: "dns:///worker-grpc:9090"
+
+  worker-grpc:
+    <<: *worker-base
+    profiles: ["grpc"]
+    environment:
+      <<: *worker-base-env
+      WORKER_TYPE: "grpc"
+      GRPC_ADDR: ":9090"
+    deploy:
+      replicas: 3
 

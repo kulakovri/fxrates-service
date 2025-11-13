@@ -22,7 +22,7 @@ X-Idempotency-Key: demo-27
 ###
 
 # Get quote by id
-GET http://localhost:8080/quotes/updates/a0ae1ab8-aa07-4409-87e4-06d3f0129e3a
+GET http://localhost:8080/quotes/updates/7e40f7dc-cbde-4880-ac7b-86b5282147d5
 Accept: application/json
 
 ###
