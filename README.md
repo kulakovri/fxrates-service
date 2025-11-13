@@ -1,11 +1,10 @@
 # fxrates-service
 
-Asynchronous FX rates microservice in Go 1.22 (Clean Architecture).
+Asynchronous FX rates microservice in Go 1.23.
 
 ## Documentation
 
 - [Architecture Overview](docs/ARCHITECTURE.md)
-- [Clean Architecture (layers)](docs/CLEAN_ARCH.md)
 
 ## Configuration
 
