@@ -98,13 +98,16 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 
 	// In-Process chan mode: enqueue to channel if available.
 	if s.enqueue != nil {
+		log.Info("request_quote_update.dispatch_chan")
 		traceID := getTraceIDFromContext(r.Context())
 		if err := s.enqueue(r.Context(), id, body.Pair, traceID); err != nil {
+			log.Warn("request_quote_update.dispatch_chan_failed")
 			writeError(w, http.StatusServiceUnavailable, "queue busy")
 			return
 		}
 		// In gRPC mode, trigger background fetch via gRPC and persist results.
 	} else if s.cfg.WorkerType == "grpc" && s.grpcClient != nil {
+		log.Info("request_quote_update.dispatch_grpc", zap.String("grpc_target", s.cfg.GRPCTarget))
 		traceID := getTraceIDFromContext(r.Context())
 		pair := body.Pair
 		updateID := id
@@ -124,7 +127,19 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 				UpdatedAt: t,
 			}, nil
 		}
-		go s.svc.CompleteQuoteUpdate(context.Background(), updateID, fetchFn, "grpc")
+		go func() {
+			logx.L().Info("grpc_complete_update.start", zap.String("update_id", updateID), zap.String("pair", pair))
+			if err := s.svc.CompleteQuoteUpdate(context.Background(), updateID, fetchFn, "grpc"); err != nil {
+				logx.L().Error("grpc_complete_update.failed", zap.String("update_id", updateID), zap.Error(err))
+				return
+			}
+			logx.L().Info("grpc_complete_update.success", zap.String("update_id", updateID))
+		}()
+	} else {
+		log.Warn("request_quote_update.no_background_handler",
+			zap.String("worker_type", s.cfg.WorkerType),
+			zap.Bool("has_grpc_client", s.grpcClient != nil),
+		)
 	}
 }
 

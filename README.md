@@ -28,22 +28,29 @@ docker run --rm -p 8080:8080 fxrates:dev
 
 ## Running with different worker modes
 
+-Build/rebuild docker containers
+
+```bash
+docker build -t fxrates:dev . 
+```
+
+
 - Chan (in-process worker, no separate worker container):
 
 ```bash
-docker compose -f ops/docker/docker-compose.yml --profile chan up -d
+docker compose -f ops/docker/docker-compose.yml -p fxrates-chan --profile chan up -d
 ```
 
 - DB worker (separate polling worker):
 
 ```bash
-docker compose -f ops/docker/docker-compose.yml --profile db up -d
+docker compose -f ops/docker/docker-compose.yml -p fxrates-db --profile db up -d
 ```
 
 - gRPC worker (API → gRPC worker):
 
 ```bash
-docker compose -f ops/docker/docker-compose.yml --profile grpc up -d
+docker compose -f ops/docker/docker-compose.yml -p fxrates-grpc --profile grpc up -d
 ```
 
 ## gRPC worker mode and client-side load balancing
