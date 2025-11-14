@@ -11,6 +11,7 @@ import (
 	"fxrates-service/internal/config"
 	rateclient "fxrates-service/internal/infrastructure/grpc/rateclient"
 	grpcserver "fxrates-service/internal/infrastructure/grpc/rateserver"
+	httpserver "fxrates-service/internal/infrastructure/http"
 	"fxrates-service/internal/infrastructure/httpx"
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
@@ -188,3 +189,15 @@ func ProvideWorker(svc *application.FXRatesService, rp application.RateProvider,
 
 // Two-arg combiner for Wire to inject both cleanups (PG, Redis)
 // (no longer needed; wire aggregates cleanup funcs automatically)
+
+// ProvideAPIServer builds the HTTP server and attaches gRPC background client when enabled.
+func ProvideAPIServer(svc *application.FXRatesService, cfg config.Config, c *rateclient.Client) (*httpserver.Server, error) {
+	s := httpserver.NewServer(svc)
+	if cfg.WorkerType == "grpc" {
+		if c == nil {
+			return nil, fmt.Errorf("grpc client not configured; GRPC_TARGET=%s", cfg.GRPCTarget)
+		}
+		s.AttachGRPCBackground(c, cfg)
+	}
+	return s, nil
+}

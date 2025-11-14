@@ -28,7 +28,7 @@ var infraSet = wire.NewSet(
 func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	wire.Build(
 		infraSet,
-		httpserver.NewServer,
+		ProvideAPIServer,
 	)
 	return nil, nil, nil
 }

@@ -37,8 +37,21 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 	services := ProvideIdempotency(client, config)
 	unitOfWork := ProvideUoW(db)
 	fxRatesService := ProvideFXRatesService(repos, rateProvider, services, unitOfWork)
-	server := httpserver.NewServer(fxRatesService)
+	rateclientClient, cleanup3, err := ProvideGRPCRateClient(config)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	server, err := ProvideAPIServer(fxRatesService, config, rateclientClient)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	return server, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

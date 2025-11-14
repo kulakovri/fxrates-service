@@ -136,6 +136,12 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 			logx.L().Info("grpc_complete_update.success", zap.String("update_id", updateID))
 		}()
 	} else {
+		// If WORKER_TYPE=grpc but no client is attached, return error to caller.
+		if s.cfg.WorkerType == "grpc" && s.grpcClient == nil {
+			log.Error("request_quote_update.grpc_client_missing")
+			writeError(w, http.StatusInternalServerError, "grpc client not configured")
+			return
+		}
 		log.Warn("request_quote_update.no_background_handler",
 			zap.String("worker_type", s.cfg.WorkerType),
 			zap.Bool("has_grpc_client", s.grpcClient != nil),
