@@ -1,5 +1,4 @@
-# ops/compose.yml
-- name: Bring up fxrates stack with Compose v2
+- name: Spin fxrates-service (all profiles) with keys
   hosts: localhost
   connection: local
   gather_facts: false
@@ -8,15 +7,45 @@
     - "{{ playbook_dir }}/secrets/dev.yml"
 
   tasks:
-    - name: Up/Restart stack
+
+    - name: Build image
+      community.docker.docker_image:
+        name: fxrates:ec2
+        build:
+          path: "{{ playbook_dir }}/../.."
+        source: build
+
+    - name: Bring up chan profile
       community.docker.docker_compose_v2:
         project_src: "{{ playbook_dir }}/docker"
         files: [docker-compose.yml]
+        project_name: "fxrates-chan"
         state: present
-        build: always
-        pull: missing
-        remove_orphans: true
-        recreate: auto
+        profiles: ["chan"]
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
+
+    - name: Bring up db profile
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [docker-compose.yml]
+        project_name: "fxrates-db"
+        state: present
+        profiles: ["db"]
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
+
+    - name: Bring up grpc profile
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [docker-compose.yml]
+        project_name: "fxrates-grpc"
+        state: present
+        profiles: ["grpc"]
       environment:
         PROVIDER: "exchangeratesapi"
         EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
