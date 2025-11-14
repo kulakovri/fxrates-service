@@ -1,19 +1,19 @@
 ### Health check
-GET http://localhost:8080/healthz
+GET {{ baseUrl }}/healthz
 Accept: application/json
 
 ###
 
 ### Readiness check
-GET http://localhost:8080/readyz
+GET {{ baseUrl }}/readyz
 Accept: application/json
 
 ###
 
 ### Queue quote update
-POST http://localhost:8080/quotes/updates
+POST {{ baseUrl }}/quotes/updates
 Content-Type: application/json
-X-Idempotency-Key: demo-27
+X-Idempotency-Key: demo-4
 
 {
   "pair": "EUR/USD"
@@ -22,13 +22,13 @@ X-Idempotency-Key: demo-27
 ###
 
 # Get quote by id
-GET http://localhost:8080/quotes/updates/a0ae1ab8-aa07-4409-87e4-06d3f0129e3a
+GET {{ baseUrl }}/quotes/updates/6198ea78-8ed2-491d-8410-0f6b7f9d55f0
 Accept: application/json
 
 ###
 
 # Get last quote
-GET http://localhost:8080/quotes/last?pair=EUR/USD
+GET {{ baseUrl }}/quotes/last?pair=EUR/USD
 Accept: application/json
 
 

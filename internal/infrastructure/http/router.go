@@ -42,7 +42,13 @@ func NewRouter(s *Server) http.Handler {
 		w.Write([]byte("READY"))
 	})
 
-	openapi.HandlerFromMux(s, r)
+	// Use custom error handler to ensure JSON error envelope on binding/validation errors
+	openapi.HandlerWithOptions(s, openapi.ChiServerOptions{
+		BaseRouter: r,
+		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			writeError(w, http.StatusBadRequest, "bad request")
+		},
+	})
 	return r
 }
 

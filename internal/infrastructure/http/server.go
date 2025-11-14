@@ -4,45 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"os"
-	"regexp"
-	"time"
-
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
 	"fxrates-service/internal/domain"
-	"fxrates-service/internal/infrastructure/grpc/ratepb"
 	"fxrates-service/internal/infrastructure/http/openapi"
 	"fxrates-service/internal/infrastructure/logx"
+	"net/http"
 
 	"go.uber.org/zap"
 )
 
-// RateFetcher is the minimal interface needed from the gRPC client.
-type RateFetcher interface {
-	Fetch(ctx context.Context, pair, traceID string, timeout time.Duration) (*ratepb.FetchResponse, error)
-}
-
 type Server struct {
-	svc        *application.FXRatesService
-	ping       func(context.Context) error
-	quoteRepo  application.QuoteRepo
-	jobRepo    application.UpdateJobRepo
-	grpcClient RateFetcher
-	cfg        config.Config
+	svc      *application.FXRatesService
+	ping     func(context.Context) error
+	dispatch func(ctx context.Context, id, pair, traceID string) error
 }
 
 func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: svc} }
 
 func (s *Server) SetReadyCheck(fn func(context.Context) error) { s.ping = fn }
 
-// AttachGRPCBackground enables async background processing via gRPC worker mode.
-func (s *Server) AttachGRPCBackground(q application.QuoteRepo, u application.UpdateJobRepo, c RateFetcher, cfg config.Config) {
-	s.quoteRepo = q
-	s.jobRepo = u
-	s.grpcClient = c
-	s.cfg = cfg
+func (s *Server) SetDispatcher(fn func(context.Context, string, string, string) error) {
+	s.dispatch = fn
 }
 
 func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, params openapi.RequestQuoteUpdateParams) {
@@ -58,10 +41,9 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		writeError(w, http.StatusBadRequest, "pair is required")
 		return
 	}
-	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
-	if !rePair.MatchString(body.Pair) {
+	if !domain.ValidatePair(body.Pair) {
 		log.Warn("request_quote_update.invalid_pair_format", zap.String("pair", body.Pair))
-		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
+		writeError(w, http.StatusBadRequest, "invalid pair")
 		return
 	}
 	idem := r.Header.Get("X-Idempotency-Key")
@@ -81,6 +63,9 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 		case errors.Is(err, application.ErrBadRequest):
 			writeError(w, http.StatusBadRequest, "bad request")
 			return
+		case errors.Is(err, domain.ErrUnsupportedPair):
+			writeError(w, http.StatusBadRequest, "invalid pair")
+			return
 		case errors.Is(err, application.ErrConflict):
 			writeError(w, http.StatusConflict, "conflict")
 			return
@@ -94,46 +79,15 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 	resp := openapi.QuoteUpdateResponse{UpdateId: id}
 	writeJSON(w, http.StatusAccepted, resp)
 
-	// In gRPC mode, trigger background fetch via gRPC and persist results.
-	if s.cfg.WorkerType == "grpc" && s.grpcClient != nil && s.quoteRepo != nil && s.jobRepo != nil {
-		traceID := getTraceIDFromContext(r.Context())
-		pair := body.Pair
-		updateID := id
-		timeout := s.cfg.RequestTimeout
-		go func() {
-			bgCtx := context.Background()
-			l := logx.L().With(zap.String("trace_id", traceID), zap.String("pair", pair), zap.String("update_id", updateID))
-			res, err := s.grpcClient.Fetch(bgCtx, pair, traceID, timeout)
-			if err != nil {
-				msg := err.Error()
-				_ = s.jobRepo.UpdateStatus(bgCtx, updateID, domain.QuoteUpdateStatusFailed, &msg)
-				l.Warn("grpc_background.fetch_failed", zap.Error(err))
-				return
-			}
-			// Parse time
-			t, err := time.Parse(time.RFC3339Nano, res.GetUpdatedAt())
-			if err != nil {
-				msg := err.Error()
-				_ = s.jobRepo.UpdateStatus(bgCtx, updateID, domain.QuoteUpdateStatusFailed, &msg)
-				l.Warn("grpc_background.bad_time", zap.Error(err))
-				return
-			}
-			// Persist history and quote, then mark done
-			_ = s.quoteRepo.AppendHistory(bgCtx, domain.QuoteHistory{
-				Pair:     domain.Pair(res.GetPair()),
-				Price:    res.GetPrice(),
-				QuotedAt: t,
-				Source:   "grpc",
-				UpdateID: &updateID,
-			})
-			_ = s.quoteRepo.Upsert(bgCtx, domain.Quote{
-				Pair:      domain.Pair(res.GetPair()),
-				Price:     res.GetPrice(),
-				UpdatedAt: t,
-			})
-			_ = s.jobRepo.UpdateStatus(bgCtx, updateID, domain.QuoteUpdateStatusDone, nil)
-			l.Info("grpc_background.done")
-		}()
+	traceID := getTraceIDFromContext(r.Context())
+
+	if s.dispatch != nil {
+		log.Info("request_quote_update.dispatch")
+		if err := s.dispatch(r.Context(), id, body.Pair, traceID); err != nil {
+			log.Warn("request_quote_update.dispatch_failed", zap.Error(err))
+			writeError(w, http.StatusServiceUnavailable, "background dispatch failed")
+			return
+		}
 	}
 }
 
@@ -142,7 +96,7 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 	log.Info("get_quote_update.call_service")
 	upd, err := s.svc.GetQuoteUpdate(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, application.ErrNotFound) {
+		if errors.Is(err, domain.ErrNotFound) {
 			log.Info("get_quote_update.not_found")
 			writeError(w, http.StatusNotFound, "not found")
 			return
@@ -152,10 +106,17 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 		return
 	}
 	log.Info("get_quote_update.success", zap.String("status", string(upd.Status)))
+	// Map price (*float64) to OpenAPI price (*float32)
+	var price *float32
+	if upd.Price != nil {
+		p := float32(*upd.Price)
+		price = &p
+	}
 	resp := openapi.QuoteUpdateDetails{
 		UpdateId:  upd.ID,
 		Pair:      string(upd.Pair),
 		Status:    mapStatus(upd.Status),
+		Price:     price,
 		UpdatedAt: upd.UpdatedAt,
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -163,16 +124,15 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 
 func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params openapi.GetLastQuoteParams) {
 	log := loggerForRequest(r).With(zap.String("pair", params.Pair))
-	rePair := regexp.MustCompile(`^[A-Z]{3}/[A-Z]{3}$`)
-	if !rePair.MatchString(params.Pair) {
+	if !domain.ValidatePair(params.Pair) {
 		log.Warn("get_last_quote.invalid_pair_format")
-		writeError(w, http.StatusBadRequest, "invalid pair format (e.g. EUR/USD)")
+		writeError(w, http.StatusBadRequest, "invalid pair")
 		return
 	}
 	log.Info("get_last_quote.call_service")
 	q, err := s.svc.GetLastQuote(r.Context(), params.Pair)
 	if err != nil {
-		if errors.Is(err, application.ErrNotFound) {
+		if errors.Is(err, domain.ErrNotFound) {
 			log.Info("get_last_quote.not_found")
 			writeError(w, http.StatusNotFound, "not found")
 			return
@@ -197,7 +157,7 @@ func (s *Server) GetLastQuote(w http.ResponseWriter, r *http.Request, params ope
 
 // Run starts the HTTP server and blocks until the context is canceled or the server stops.
 func (s *Server) Run(ctx context.Context) error {
-	addr := ":" + getEnv("PORT", "8080")
+	addr := ":" + config.Load().Port
 	server := &http.Server{
 		Addr:    addr,
 		Handler: NewRouter(s),
@@ -213,7 +173,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), config.Load().ShutdownTimeout)
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 		logx.L().Info("server stopped")
@@ -226,12 +186,6 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -271,11 +225,13 @@ func loggerForRequest(r *http.Request) *zap.Logger {
 
 func mapStatus(s domain.QuoteUpdateStatus) openapi.QuoteUpdateDetailsStatus {
 	switch s {
+	case domain.QuoteUpdateStatusQueued:
+		return openapi.Queued
+	case domain.QuoteUpdateStatusProcessing:
+		return openapi.Processing
 	case domain.QuoteUpdateStatusDone:
-		return openapi.Completed
-	case domain.QuoteUpdateStatusFailed:
-		return openapi.Failed
+		return openapi.Done
 	default:
-		return openapi.Pending
+		return openapi.Failed
 	}
 }

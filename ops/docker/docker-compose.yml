@@ -1,57 +1,158 @@
+x-api-base: &api-base
+  image: fxrates:dev
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment: &api-base-env
+    PORT: "8080"
+    STORAGE: "pg"
+    DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
+    LOG_LEVEL: "info"
+    REDIS_ADDR: ${REDIS_ADDR}
+    REQUEST_TIMEOUT_MS: "3000"
+  ports:
+    - "8080:8080"
+
+x-worker-base: &worker-base
+  image: fxrates:dev
+  depends_on:
+    postgres:
+      condition: service_healthy
+  entrypoint: ["/usr/local/bin/worker"]
+  environment: &worker-base-env
+    STORAGE: "pg"
+    DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
+    PROVIDER: ${PROVIDER}
+    EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
+    EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
+    REDIS_ADDR: ${REDIS_ADDR}
+    WORKER_POLL_MS: "250"
+    WORKER_BATCH_LIMIT: "10"
+
 services:
-  postgres:
+  # chan profile: isolated postgres/redis + API (in-process worker)
+  postgres-chan:
     image: postgres:17
+    profiles: ["chan"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: fxrates
-    ports:
-      - "5431:5431"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d fxrates"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  api:
-    image: fxrates:dev
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      PORT: "8080"
-      STORAGE: "pg"
-      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
-      LOG_LEVEL: "info"
-      REDIS_ADDR: ${REDIS_ADDR}
-      WORKER_TYPE: "grpc" # db | grpc
-      GRPC_TARGET: "dns:///worker:9090"
-      REQUEST_TIMEOUT_MS: "3000"
-    ports:
-      - "8080:8080"
+  redis-chan:
+    image: redis:7-alpine
+    profiles: ["chan"]
 
-  worker:
-    image: fxrates:dev
+  api-chan:
+    <<: *api-base
+    profiles: ["chan"]
     depends_on:
-      postgres:
+      postgres-chan:
         condition: service_healthy
-    entrypoint: ["/usr/local/bin/worker"]
     environment:
-      STORAGE: "pg"
-      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
-      WORKER_TYPE: "grpc" # db | grpc
-      WORKER_POLL_MS: "250"
-      WORKER_BATCH_LIMIT: "10"
-      PROVIDER: ${PROVIDER}
-      EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
-      EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
-      REDIS_ADDR: ${REDIS_ADDR}
-      GRPC_ADDR: ":9090"
+      <<: *api-base-env
+      WORKER_TYPE: "chan"
+      DATABASE_URL: "postgres://postgres:postgres@postgres-chan:5432/fxrates?sslmode=disable"
+      REDIS_ADDR: "redis-chan:6379"
+    ports:
+      - "8081:8080"
+
+  # db profile: isolated postgres/redis + API + DB polling workers
+  postgres-db:
+    image: postgres:17
+    profiles: ["db"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fxrates
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fxrates"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-db:
+    image: redis:7-alpine
+    profiles: ["db"]
+
+  api-db:
+    <<: *api-base
+    profiles: ["db"]
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      <<: *api-base-env
+      WORKER_TYPE: "db"
+      DATABASE_URL: "postgres://postgres:postgres@postgres-db:5432/fxrates?sslmode=disable"
+      REDIS_ADDR: "redis-db:6379"
+    ports:
+      - "8082:8080"
+
+  worker-db:
+    <<: *worker-base
+    profiles: ["db"]
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      <<: *worker-base-env
+      WORKER_TYPE: "db"
+      DATABASE_URL: "postgres://postgres:postgres@postgres-db:5432/fxrates?sslmode=disable"
+      REDIS_ADDR: "redis-db:6379"
     deploy:
       replicas: 3
 
-  redis:
+  # grpc profile: isolated postgres/redis + API + gRPC workers
+  postgres-grpc:
+    image: postgres:17
+    profiles: ["grpc"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fxrates
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fxrates"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-grpc:
     image: redis:7-alpine
+    profiles: ["grpc"]
+
+  api-grpc:
+    <<: *api-base
+    profiles: ["grpc"]
+    depends_on:
+      postgres-grpc:
+        condition: service_healthy
+    environment:
+      <<: *api-base-env
+      WORKER_TYPE: "grpc"
+      GRPC_TARGET: "dns:///worker-grpc:9090"
+      DATABASE_URL: "postgres://postgres:postgres@postgres-grpc:5432/fxrates?sslmode=disable"
+      REDIS_ADDR: "redis-grpc:6379"
     ports:
-      - "6379:6379"
+      - "8083:8080"
+
+  worker-grpc:
+    <<: *worker-base
+    profiles: ["grpc"]
+    depends_on:
+      postgres-grpc:
+        condition: service_healthy
+    environment:
+      <<: *worker-base-env
+      WORKER_TYPE: "grpc"
+      GRPC_ADDR: ":9090"
+      DATABASE_URL: "postgres://postgres:postgres@postgres-grpc:5432/fxrates?sslmode=disable"
+      REDIS_ADDR: "redis-grpc:6379"
+    deploy:
+      replicas: 3
 

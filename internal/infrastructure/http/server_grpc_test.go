@@ -9,35 +9,28 @@ import (
 	"testing"
 	"time"
 
-	"fxrates-service/internal/config"
-	"fxrates-service/internal/infrastructure/grpc/ratepb"
+	"fxrates-service/internal/domain"
 
 	"github.com/stretchr/testify/require"
 )
-
-type fakeRateClient struct {
-	pair   string
-	price  float64
-	nowStr string
-}
-
-func (f *fakeRateClient) Fetch(ctx context.Context, pair, traceID string, timeout time.Duration) (*ratepb.FetchResponse, error) {
-	return &ratepb.FetchResponse{
-		Pair:      pair,
-		Price:     f.price,
-		UpdatedAt: f.nowStr,
-	}, nil
-}
 
 func TestRequestQuoteUpdate_AsyncGRPCBackground(t *testing.T) {
 	// Prepare service and repos
 	svc, qr, ur, _ := NewInMemoryService()
 	srv := NewServer(svc)
-	// Attach fake gRPC client and repos with grpc mode config
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	srv.AttachGRPCBackground(qr, ur, &fakeRateClient{price: 2.5, nowStr: now}, config.Config{
-		WorkerType:     "grpc",
-		RequestTimeout: 2 * time.Second,
+	// Install a dispatcher that simulates gRPC background completion
+	const price = 2.5
+	srv.SetDispatcher(func(ctx context.Context, updateID, pair, traceID string) error {
+		go func() {
+			_ = svc.CompleteQuoteUpdate(context.Background(), updateID, func(context.Context) (domain.Quote, error) {
+				return domain.Quote{
+					Pair:      domain.Pair(pair),
+					Price:     price,
+					UpdatedAt: time.Now().UTC(),
+				}, nil
+			}, "grpc")
+		}()
+		return nil
 	})
 	h := NewRouter(srv)
 

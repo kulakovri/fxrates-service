@@ -38,6 +38,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/QuoteUpdateResponse'
         '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/InternalError' }
 
   /quotes/updates/{id}:
@@ -58,10 +59,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuoteUpdateDetails'
-        '404':
-          description: Update not found
-        '500':
-          description: Internal server error
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /quotes/last:
     get:
@@ -81,15 +80,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LastQuote'
-        '404':
-          description: Quote not found
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
+        '404': { $ref: '#/components/responses/NotFound' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
 components:
   schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
     QuoteUpdateRequest:
       type: object
       required:
@@ -163,6 +168,26 @@ components:
   responses:
     BadRequest:
       description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     InternalError:
       description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 

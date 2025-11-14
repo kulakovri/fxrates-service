@@ -17,9 +17,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-type fakeProvider struct{}
+type fakeFetcher struct{}
 
-func (fakeProvider) Get(_ context.Context, pair string) (domain.Quote, error) {
+func (fakeFetcher) FetchQuote(_ context.Context, pair string) (domain.Quote, error) {
 	return domain.Quote{
 		Pair:      domain.Pair(pair),
 		Price:     1.2345,
@@ -33,7 +33,7 @@ func TestRateServer_Fetch(t *testing.T) {
 	t.Cleanup(func() { _ = lis.Close() })
 
 	s := grpc.NewServer()
-	srv := &Server{RP: application.RateProvider(fakeProvider{}), Log: zap.NewNop()}
+	srv := NewServer(application.QuoteFetcher(fakeFetcher{}), zap.NewNop())
 	ratepb.RegisterRateServiceServer(s, srv)
 	go func() { _ = s.Serve(lis) }()
 	t.Cleanup(func() { s.Stop() })

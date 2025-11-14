@@ -21,7 +21,7 @@ func (f *fakeIdem) TryReserve(_ context.Context, k string) (bool, error) {
 
 func TestRequestQuoteUpdate_Idempotency_Conflict(treated *testing.T) {
 	idem := &fakeIdem{}
-	svc := NewFXRatesService(nil, &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}, nil, idem)
+	svc := NewService(nil, &fakeUpdateJobRepo{jobs: map[string]domain.QuoteUpdate{}}, nil, idem)
 	key := "ik-1"
 	if _, err := svc.RequestQuoteUpdate(context.Background(), "EUR/USD", &key); err != nil {
 		treated.Fatalf("unexpected err first call: %v", err)

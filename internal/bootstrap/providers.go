@@ -2,14 +2,18 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
+	"fxrates-service/internal/domain"
 	rateclient "fxrates-service/internal/infrastructure/grpc/rateclient"
 	grpcserver "fxrates-service/internal/infrastructure/grpc/rateserver"
+	httpserver "fxrates-service/internal/infrastructure/http"
+	"fxrates-service/internal/infrastructure/httpx"
 	"fxrates-service/internal/infrastructure/logx"
 	"fxrates-service/internal/infrastructure/pg"
 	"fxrates-service/internal/infrastructure/provider"
@@ -44,6 +48,38 @@ func ProvideLogger() *zap.Logger { return logx.L() }
 
 func ProvideConfig() config.Config { return config.Load() }
 
+type ChanBus struct {
+	Ch       chan worker.UpdateMsg
+	Enqueue  func(ctx context.Context, id, pair, traceID string) error
+	Shutdown func()
+}
+
+func ProvideChanBus(cfg config.Config) *ChanBus {
+	qSize := cfg.ChanQueueSize
+	ch := make(chan worker.UpdateMsg, qSize)
+	return &ChanBus{
+		Ch: ch,
+		Enqueue: func(ctx context.Context, id, pair, traceID string) error {
+			select {
+			case ch <- worker.UpdateMsg{ID: id, Pair: pair, TraceID: traceID}:
+				return nil
+			default:
+				t := time.NewTimer(50 * time.Millisecond)
+				defer t.Stop()
+				select {
+				case ch <- worker.UpdateMsg{ID: id, Pair: pair, TraceID: traceID}:
+					return nil
+				case <-t.C:
+					return fmt.Errorf("queue full")
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		},
+		Shutdown: func() { close(ch) },
+	}
+}
+
 func ProvideDB(ctx context.Context, log *zap.Logger, cfg config.Config) (*pg.DB, func(), error) {
 	dbURL := cfg.DatabaseURL
 	if dbURL == "" {
@@ -73,6 +109,10 @@ func ProvideRepos(db *pg.DB) Repos {
 	}
 }
 
+func ProvideUoW(db *pg.DB) application.UnitOfWork {
+	return &pg.UnitOfWork{Pool: db.Pool}
+}
+
 func ProvideRedisClient(cfg config.Config) (*redis.Client, func(), error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
@@ -95,15 +135,20 @@ func ProvideRateProvider(cfg config.Config) (application.RateProvider, error) {
 		return &provider.ExchangeRatesAPIProvider{
 			BaseURL: cfg.ExchangeAPIBase,
 			APIKey:  cfg.ExchangeAPIKey,
-			Client:  &http.Client{Timeout: 4 * time.Second},
+			Client:  &httpx.Client{HTTP: &http.Client{Timeout: 4 * time.Second}},
+			BackoffCfg: &httpx.BackoffConfig{
+				Initial: cfg.HTTPBackoffInitial,
+				Max:     cfg.HTTPBackoffMax,
+				Total:   cfg.HTTPBackoffTotal,
+			},
 		}, nil
 	default:
 		return provider.NewFake(1.2345), nil
 	}
 }
 
-func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services) *application.FXRatesService {
-	return application.NewFXRatesService(r.QuoteRepo, r.JobRepo, rp, s.Idem)
+func ProvideFXRatesService(r Repos, rp application.RateProvider, s Services, u application.UnitOfWork) *application.FXRatesService {
+	return application.NewService(r.QuoteRepo, r.JobRepo, rp, s.Idem, application.WithUoW(u))
 }
 
 // ProvideGRPCRateClient optionally dials the worker gRPC when WORKER_TYPE=grpc.
@@ -121,28 +166,20 @@ func ProvideGRPCRateClient(cfg config.Config) (*rateclient.Client, func(), error
 
 // ProvideGRPCRateServerRunner returns a runner to start the gRPC worker server when WORKER_TYPE=grpc.
 // The bool indicates whether the runner is enabled.
-func ProvideGRPCRateServerRunner(cfg config.Config, rp application.RateProvider, log *zap.Logger) (func(ctx context.Context) error, bool) {
-	if cfg.WorkerType != "grpc" {
-		return nil, false
-	}
+func ProvideGRPCRateServerRunner(cfg config.Config, rp application.RateProvider, log *zap.Logger) func(ctx context.Context) error {
 	addr := cfg.GRPCAddr
 	return func(ctx context.Context) error {
-		s := &grpcserver.Server{RP: rp, Log: log}
+		// Build a minimal service for fetch-only gRPC without DB dependencies.
+		svc := application.NewService(nil, nil, rp, nil)
+		s := grpcserver.NewServer(svc, log)
 		return grpcserver.RunServer(ctx, addr, s, log)
-	}, true
+	}
 }
 
-func ProvideWorker(r Repos, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
+func ProvideWorker(svc *application.FXRatesService, rp application.RateProvider, log *zap.Logger, cfg config.Config) application.Worker {
 	switch cfg.WorkerType {
 	case "db":
-		return &worker.DbWorker{
-			Jobs:       r.JobRepo,
-			Quotes:     r.QuoteRepo,
-			Provider:   rp,
-			PollEvery:  cfg.WorkerPoll,
-			BatchLimit: cfg.WorkerBatchSize,
-			Log:        log,
-		}
+		return worker.NewDBWorker(svc, cfg.WorkerPoll, cfg.WorkerBatchSize, log)
 	default:
 		if log != nil {
 			log.Error("unknown WORKER_TYPE; no worker launched")
@@ -153,3 +190,74 @@ func ProvideWorker(r Repos, rp application.RateProvider, log *zap.Logger, cfg co
 
 // Two-arg combiner for Wire to inject both cleanups (PG, Redis)
 // (no longer needed; wire aggregates cleanup funcs automatically)
+
+// ProvideAPIServer builds the HTTP server and attaches background handlers (chan/grpc) when enabled.
+// Returns a cleanup that stops any in-process workers.
+func ProvideAPIServer(
+	svc *application.FXRatesService,
+	cfg config.Config,
+	c *rateclient.Client,
+	bus *ChanBus,
+	log *zap.Logger,
+) (*httpserver.Server, func(), error) {
+	s := httpserver.NewServer(svc)
+	cleanup := func() {}
+
+	// Attach in-process chan worker mode
+	if cfg.WorkerType == "chan" && bus != nil {
+		// For chan mode, dispatcher is just enqueue.
+		s.SetDispatcher(bus.Enqueue)
+		// Start N workers
+		workers := cfg.ChanConcurrency
+		if workers < 1 {
+			workers = 1
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		for i := 0; i < workers; i++ {
+			go worker.NewChanWorker(svc, bus.Ch).Start(ctx)
+		}
+		prev := cleanup
+		cleanup = func() {
+			if log != nil {
+				log.Info("stopping chan workers")
+			}
+			cancel()
+			if bus != nil && bus.Shutdown != nil {
+				bus.Shutdown()
+			}
+			prev()
+		}
+	} else if cfg.WorkerType == "grpc" {
+		if c == nil {
+			return nil, func() {}, fmt.Errorf("grpc client not configured; GRPC_TARGET=%s", cfg.GRPCTarget)
+		}
+		// Dispatcher that fetches via gRPC and completes the update in background
+		s.SetDispatcher(func(ctx context.Context, updateID, pair, traceID string) error {
+			timeout := cfg.RequestTimeout
+			go func() {
+				logx.L().Info("grpc_complete_update.start", zap.String("update_id", updateID), zap.String("pair", pair))
+				if err := svc.CompleteQuoteUpdate(context.Background(), updateID, func(cctx context.Context) (domain.Quote, error) {
+					res, err := c.Fetch(cctx, pair, traceID, timeout)
+					if err != nil {
+						return domain.Quote{}, err
+					}
+					t, err := time.Parse(time.RFC3339Nano, res.GetUpdatedAt())
+					if err != nil {
+						return domain.Quote{}, err
+					}
+					return domain.Quote{
+						Pair:      domain.Pair(res.GetPair()),
+						Price:     res.GetPrice(),
+						UpdatedAt: t,
+					}, nil
+				}, "grpc"); err != nil {
+					logx.L().Error("grpc_complete_update.failed", zap.String("update_id", updateID), zap.Error(err))
+					return
+				}
+				logx.L().Info("grpc_complete_update.success", zap.String("update_id", updateID))
+			}()
+			return nil
+		})
+	}
+	return s, cleanup, nil
+}

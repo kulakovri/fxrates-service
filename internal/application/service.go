@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"fxrates-service/internal/domain"
@@ -20,6 +21,7 @@ type FXRatesService struct {
 	quoteRepo     QuoteRepo
 	updateJobRepo UpdateJobRepo
 	rateProvider  RateProvider
+	uow           UnitOfWork
 
 	now   ClockFunc
 	newID IDGenFunc
@@ -28,19 +30,19 @@ type FXRatesService struct {
 
 func WithClock(f ClockFunc) Option { return func(s *FXRatesService) { s.now = f } }
 func WithIDGen(f IDGenFunc) Option { return func(s *FXRatesService) { s.newID = f } }
+func WithUoW(u UnitOfWork) Option  { return func(s *FXRatesService) { s.uow = u } }
 
-func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, idem IdempotencyStore, opts ...Option) *FXRatesService {
+func NewService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, rateProvider RateProvider, idem IdempotencyStore, opts ...Option) *FXRatesService {
 	s := &FXRatesService{
 		quoteRepo:     quoteRepo,
 		updateJobRepo: updateJobRepo,
 		rateProvider:  rateProvider,
+		uow:           NoopUoW{},
 		now:           time.Now,
 		newID:         func() string { return uuid.NewString() },
 	}
 	if idem != nil {
 		s.idem = idem
-	} else {
-		s.idem = NoopIdempotency{}
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -49,13 +51,16 @@ func NewFXRatesService(quoteRepo QuoteRepo, updateJobRepo UpdateJobRepo, ratePro
 }
 
 func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, idem *string) (string, error) {
-	if !domain.ValidatePair(pair) {
-		return "", ErrUnsupportedPair
-	}
 	if idem == nil || *idem == "" {
 		return "", ErrBadRequest
 	}
-	ok, err := s.idem.TryReserve(ctx, *idem)
+	var ok bool
+	var err error
+	if s.idem != nil {
+		ok, err = s.idem.TryReserve(ctx, *idem)
+	} else {
+		ok = true
+	}
 	if err != nil {
 		return "", err
 	}
@@ -70,12 +75,91 @@ func (s *FXRatesService) RequestQuoteUpdate(ctx context.Context, pair string, id
 }
 
 func (s *FXRatesService) GetQuoteUpdate(ctx context.Context, id string) (domain.QuoteUpdate, error) {
-	return s.updateJobRepo.GetByID(ctx, id)
+	upd, err := s.updateJobRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.QuoteUpdate{}, domain.ErrNotFound
+		}
+		return domain.QuoteUpdate{}, err
+	}
+	return upd, nil
 }
 
 func (s *FXRatesService) GetLastQuote(ctx context.Context, pair string) (domain.Quote, error) {
-	if !domain.ValidatePair(pair) {
-		return domain.Quote{}, ErrUnsupportedPair
+	q, err := s.quoteRepo.GetLast(ctx, pair)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.Quote{}, domain.ErrNotFound
+		}
+		return domain.Quote{}, err
 	}
-	return s.quoteRepo.GetLast(ctx, pair)
+	return q, nil
+}
+
+// QuoteFetcher is a small facade to fetch quotes via the service without exposing ports.
+type QuoteFetcher interface {
+	FetchQuote(ctx context.Context, pair string) (domain.Quote, error)
+}
+
+// FetchQuote delegates quote fetching to the provider.
+func (s *FXRatesService) FetchQuote(ctx context.Context, pair string) (domain.Quote, error) {
+	return s.rateProvider.Get(ctx, pair)
+}
+
+// CompleteQuoteUpdate performs background processing to fetch a quote and persist results.
+// The fetch function abstracts the transport and must return a complete domain.Quote.
+func (s *FXRatesService) CompleteQuoteUpdate(
+	ctx context.Context,
+	updateID string,
+	fetch func(context.Context) (domain.Quote, error),
+	source string,
+) error {
+	q, err := fetch(ctx)
+	if err != nil {
+		msg := err.Error()
+		_ = s.updateJobRepo.UpdateStatus(ctx, updateID, domain.QuoteUpdateStatusFailed, &msg)
+		return err
+	}
+	return s.uow.Do(ctx, func(txCtx context.Context) error {
+		if err := s.quoteRepo.AppendHistory(txCtx, domain.QuoteHistory{
+			Pair:     q.Pair,
+			Price:    q.Price,
+			QuotedAt: q.UpdatedAt,
+			Source:   source,
+			UpdateID: &updateID,
+		}); err != nil {
+			return err
+		}
+		if err := s.quoteRepo.Upsert(txCtx, domain.Quote{
+			Pair:      q.Pair,
+			Price:     q.Price,
+			UpdatedAt: q.UpdatedAt,
+		}); err != nil {
+			return err
+		}
+		return s.updateJobRepo.UpdateStatus(txCtx, updateID, domain.QuoteUpdateStatusDone, nil)
+	})
+}
+
+// ProcessQueueBatch claims queued jobs and processes them using the service's RateProvider.
+// Best-effort: errors are aggregated and returned as a single error if any occurred.
+func (s *FXRatesService) ProcessQueueBatch(
+	ctx context.Context,
+	batchLimit int,
+) error {
+	jobs, err := s.updateJobRepo.ClaimQueued(ctx, batchLimit)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, j := range jobs {
+		_ = s.updateJobRepo.UpdateStatus(ctx, j.ID, domain.QuoteUpdateStatusProcessing, nil)
+		err := s.CompleteQuoteUpdate(ctx, j.ID, func(c context.Context) (domain.Quote, error) {
+			return s.FetchQuote(c, j.Pair)
+		}, "db")
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
