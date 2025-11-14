@@ -18,7 +18,6 @@
         remove_orphans: true
         recreate: auto
       environment:
-        DATABASE_URL: "{{ env.DATABASE_URL }}"
-        REDIS_ADDR: "{{ env.REDIS_ADDR }}"
+        PROVIDER: "exchangeratesapi"
         EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
         EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
