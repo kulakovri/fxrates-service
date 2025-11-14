@@ -4,49 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"os"
-	"time"
-
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
 	"fxrates-service/internal/domain"
-	"fxrates-service/internal/infrastructure/grpc/ratepb"
 	"fxrates-service/internal/infrastructure/http/openapi"
 	"fxrates-service/internal/infrastructure/logx"
+	"net/http"
 
 	"go.uber.org/zap"
 )
 
-// RateFetcher is the minimal interface needed from the gRPC client.
-type RateFetcher interface {
-	Fetch(ctx context.Context, pair, traceID string, timeout time.Duration) (*ratepb.FetchResponse, error)
-}
-
 type Server struct {
-	svc        *application.FXRatesService
-	ping       func(context.Context) error
-	grpcClient RateFetcher
-	cfg        config.Config
-	enqueue    func(ctx context.Context, id, pair, traceID string) error
-	dispatch   func(ctx context.Context, id, pair, traceID string) error
+	svc      *application.FXRatesService
+	ping     func(context.Context) error
+	dispatch func(ctx context.Context, id, pair, traceID string) error
 }
 
 func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: svc} }
 
 func (s *Server) SetReadyCheck(fn func(context.Context) error) { s.ping = fn }
 
-func (s *Server) SetEnqueuer(fn func(context.Context, string, string, string) error) {
-	s.enqueue = fn
-}
-
 func (s *Server) SetDispatcher(fn func(context.Context, string, string, string) error) {
 	s.dispatch = fn
-}
-
-func (s *Server) AttachGRPCBackground(c RateFetcher, cfg config.Config) {
-	s.grpcClient = c
-	s.cfg = cfg
 }
 
 func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, params openapi.RequestQuoteUpdateParams) {
@@ -102,17 +81,13 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 
 	traceID := getTraceIDFromContext(r.Context())
 
-	// Single injected dispatcher (wired in bootstrap). Server stays thin.
-	if s.dispatch == nil {
-		log.Error("request_quote_update.dispatcher_missing", zap.String("worker_type", s.cfg.WorkerType))
-		writeError(w, http.StatusInternalServerError, "background dispatcher not configured")
-		return
-	}
-	log.Info("request_quote_update.dispatch", zap.String("worker_type", s.cfg.WorkerType))
-	if err := s.dispatch(r.Context(), id, body.Pair, traceID); err != nil {
-		log.Warn("request_quote_update.dispatch_failed", zap.Error(err))
-		writeError(w, http.StatusServiceUnavailable, "background dispatch failed")
-		return
+	if s.dispatch != nil {
+		log.Info("request_quote_update.dispatch")
+		if err := s.dispatch(r.Context(), id, body.Pair, traceID); err != nil {
+			log.Warn("request_quote_update.dispatch_failed", zap.Error(err))
+			writeError(w, http.StatusServiceUnavailable, "background dispatch failed")
+			return
+		}
 	}
 }
 
@@ -211,12 +186,6 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

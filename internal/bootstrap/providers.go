@@ -205,7 +205,7 @@ func ProvideAPIServer(
 
 	// Attach in-process chan worker mode
 	if cfg.WorkerType == "chan" && bus != nil {
-		s.SetEnqueuer(bus.Enqueue)
+		// For chan mode, dispatcher is just enqueue.
 		s.SetDispatcher(bus.Enqueue)
 		// Start N workers
 		workers := cfg.ChanConcurrency
@@ -258,7 +258,6 @@ func ProvideAPIServer(
 			}()
 			return nil
 		})
-		s.AttachGRPCBackground(c, cfg)
 	}
 	return s, cleanup, nil
 }
