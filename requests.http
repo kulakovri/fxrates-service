@@ -13,7 +13,7 @@ Accept: application/json
 ### Queue quote update
 POST {{ baseUrl }}/quotes/updates
 Content-Type: application/json
-X-Idempotency-Key: demo-3
+X-Idempotency-Key: demo-4
 
 {
   "pair": "EUR/USD"
@@ -22,7 +22,7 @@ X-Idempotency-Key: demo-3
 ###
 
 # Get quote by id
-GET {{ baseUrl }}/quotes/updates/ce960c7e-fc93-471f-b3fc-3d0e78511963
+GET {{ baseUrl }}/quotes/updates/6198ea78-8ed2-491d-8410-0f6b7f9d55f0
 Accept: application/json
 
 ###
