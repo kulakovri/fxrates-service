@@ -9,6 +9,7 @@ import (
 
 	"fxrates-service/internal/application"
 	"fxrates-service/internal/config"
+	"fxrates-service/internal/domain"
 	rateclient "fxrates-service/internal/infrastructure/grpc/rateclient"
 	grpcserver "fxrates-service/internal/infrastructure/grpc/rateserver"
 	httpserver "fxrates-service/internal/infrastructure/http"
@@ -205,6 +206,7 @@ func ProvideAPIServer(
 	// Attach in-process chan worker mode
 	if cfg.WorkerType == "chan" && bus != nil {
 		s.SetEnqueuer(bus.Enqueue)
+		s.SetDispatcher(bus.Enqueue)
 		// Start N workers
 		workers := cfg.ChanConcurrency
 		if workers < 1 {
@@ -225,12 +227,37 @@ func ProvideAPIServer(
 			}
 			prev()
 		}
-	}
-
-	if cfg.WorkerType == "grpc" {
+	} else if cfg.WorkerType == "grpc" {
 		if c == nil {
 			return nil, func() {}, fmt.Errorf("grpc client not configured; GRPC_TARGET=%s", cfg.GRPCTarget)
 		}
+		// Dispatcher that fetches via gRPC and completes the update in background
+		s.SetDispatcher(func(ctx context.Context, updateID, pair, traceID string) error {
+			timeout := cfg.RequestTimeout
+			go func() {
+				logx.L().Info("grpc_complete_update.start", zap.String("update_id", updateID), zap.String("pair", pair))
+				if err := svc.CompleteQuoteUpdate(context.Background(), updateID, func(cctx context.Context) (domain.Quote, error) {
+					res, err := c.Fetch(cctx, pair, traceID, timeout)
+					if err != nil {
+						return domain.Quote{}, err
+					}
+					t, err := time.Parse(time.RFC3339Nano, res.GetUpdatedAt())
+					if err != nil {
+						return domain.Quote{}, err
+					}
+					return domain.Quote{
+						Pair:      domain.Pair(res.GetPair()),
+						Price:     res.GetPrice(),
+						UpdatedAt: t,
+					}, nil
+				}, "grpc"); err != nil {
+					logx.L().Error("grpc_complete_update.failed", zap.String("update_id", updateID), zap.Error(err))
+					return
+				}
+				logx.L().Info("grpc_complete_update.success", zap.String("update_id", updateID))
+			}()
+			return nil
+		})
 		s.AttachGRPCBackground(c, cfg)
 	}
 	return s, cleanup, nil

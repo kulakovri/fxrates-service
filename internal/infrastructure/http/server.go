@@ -29,6 +29,7 @@ type Server struct {
 	grpcClient RateFetcher
 	cfg        config.Config
 	enqueue    func(ctx context.Context, id, pair, traceID string) error
+	dispatch   func(ctx context.Context, id, pair, traceID string) error
 }
 
 func NewServer(svc *application.FXRatesService) *Server { return &Server{svc: svc} }
@@ -39,7 +40,10 @@ func (s *Server) SetEnqueuer(fn func(context.Context, string, string, string) er
 	s.enqueue = fn
 }
 
-// AttachGRPCBackground enables async background processing via gRPC worker mode.
+func (s *Server) SetDispatcher(fn func(context.Context, string, string, string) error) {
+	s.dispatch = fn
+}
+
 func (s *Server) AttachGRPCBackground(c RateFetcher, cfg config.Config) {
 	s.grpcClient = c
 	s.cfg = cfg
@@ -96,56 +100,19 @@ func (s *Server) RequestQuoteUpdate(w http.ResponseWriter, r *http.Request, para
 	resp := openapi.QuoteUpdateResponse{UpdateId: id}
 	writeJSON(w, http.StatusAccepted, resp)
 
-	// In-Process chan mode: enqueue to channel if available.
-	if s.enqueue != nil {
-		log.Info("request_quote_update.dispatch_chan")
-		traceID := getTraceIDFromContext(r.Context())
-		if err := s.enqueue(r.Context(), id, body.Pair, traceID); err != nil {
-			log.Warn("request_quote_update.dispatch_chan_failed")
-			writeError(w, http.StatusServiceUnavailable, "queue busy")
-			return
-		}
-		// In gRPC mode, trigger background fetch via gRPC and persist results.
-	} else if s.cfg.WorkerType == "grpc" && s.grpcClient != nil {
-		log.Info("request_quote_update.dispatch_grpc", zap.String("grpc_target", s.cfg.GRPCTarget))
-		traceID := getTraceIDFromContext(r.Context())
-		pair := body.Pair
-		updateID := id
-		timeout := s.cfg.RequestTimeout
-		fetchFn := func(ctx context.Context) (domain.Quote, error) {
-			res, err := s.grpcClient.Fetch(ctx, pair, traceID, timeout)
-			if err != nil {
-				return domain.Quote{}, err
-			}
-			t, err := time.Parse(time.RFC3339Nano, res.GetUpdatedAt())
-			if err != nil {
-				return domain.Quote{}, err
-			}
-			return domain.Quote{
-				Pair:      domain.Pair(res.GetPair()),
-				Price:     res.GetPrice(),
-				UpdatedAt: t,
-			}, nil
-		}
-		go func() {
-			logx.L().Info("grpc_complete_update.start", zap.String("update_id", updateID), zap.String("pair", pair))
-			if err := s.svc.CompleteQuoteUpdate(context.Background(), updateID, fetchFn, "grpc"); err != nil {
-				logx.L().Error("grpc_complete_update.failed", zap.String("update_id", updateID), zap.Error(err))
-				return
-			}
-			logx.L().Info("grpc_complete_update.success", zap.String("update_id", updateID))
-		}()
-	} else {
-		// If WORKER_TYPE=grpc but no client is attached, return error to caller.
-		if s.cfg.WorkerType == "grpc" && s.grpcClient == nil {
-			log.Error("request_quote_update.grpc_client_missing")
-			writeError(w, http.StatusInternalServerError, "grpc client not configured")
-			return
-		}
-		log.Warn("request_quote_update.no_background_handler",
-			zap.String("worker_type", s.cfg.WorkerType),
-			zap.Bool("has_grpc_client", s.grpcClient != nil),
-		)
+	traceID := getTraceIDFromContext(r.Context())
+
+	// Single injected dispatcher (wired in bootstrap). Server stays thin.
+	if s.dispatch == nil {
+		log.Error("request_quote_update.dispatcher_missing", zap.String("worker_type", s.cfg.WorkerType))
+		writeError(w, http.StatusInternalServerError, "background dispatcher not configured")
+		return
+	}
+	log.Info("request_quote_update.dispatch", zap.String("worker_type", s.cfg.WorkerType))
+	if err := s.dispatch(r.Context(), id, body.Pair, traceID); err != nil {
+		log.Warn("request_quote_update.dispatch_failed", zap.Error(err))
+		writeError(w, http.StatusServiceUnavailable, "background dispatch failed")
+		return
 	}
 }
 
