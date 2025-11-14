@@ -19,6 +19,7 @@ var infraSet = wire.NewSet(
 	ProvideUoW,
 	ProvideRedisClient,
 	ProvideIdempotency,
+	ProvideChanBus,
 	ProvideRateProvider,
 	ProvideFXRatesService,
 	ProvideGRPCRateClient,

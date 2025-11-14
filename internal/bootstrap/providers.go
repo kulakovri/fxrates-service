@@ -190,14 +190,48 @@ func ProvideWorker(svc *application.FXRatesService, rp application.RateProvider,
 // Two-arg combiner for Wire to inject both cleanups (PG, Redis)
 // (no longer needed; wire aggregates cleanup funcs automatically)
 
-// ProvideAPIServer builds the HTTP server and attaches gRPC background client when enabled.
-func ProvideAPIServer(svc *application.FXRatesService, cfg config.Config, c *rateclient.Client) (*httpserver.Server, error) {
+// ProvideAPIServer builds the HTTP server and attaches background handlers (chan/grpc) when enabled.
+// Returns a cleanup that stops any in-process workers.
+func ProvideAPIServer(
+	svc *application.FXRatesService,
+	cfg config.Config,
+	c *rateclient.Client,
+	bus *ChanBus,
+	log *zap.Logger,
+) (*httpserver.Server, func(), error) {
 	s := httpserver.NewServer(svc)
+	cleanup := func() {}
+
+	// Attach in-process chan worker mode
+	if cfg.WorkerType == "chan" && bus != nil {
+		s.SetEnqueuer(bus.Enqueue)
+		// Start N workers
+		workers := cfg.ChanConcurrency
+		if workers < 1 {
+			workers = 1
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		for i := 0; i < workers; i++ {
+			go worker.NewChanWorker(svc, bus.Ch).Start(ctx)
+		}
+		prev := cleanup
+		cleanup = func() {
+			if log != nil {
+				log.Info("stopping chan workers")
+			}
+			cancel()
+			if bus != nil && bus.Shutdown != nil {
+				bus.Shutdown()
+			}
+			prev()
+		}
+	}
+
 	if cfg.WorkerType == "grpc" {
 		if c == nil {
-			return nil, fmt.Errorf("grpc client not configured; GRPC_TARGET=%s", cfg.GRPCTarget)
+			return nil, func() {}, fmt.Errorf("grpc client not configured; GRPC_TARGET=%s", cfg.GRPCTarget)
 		}
 		s.AttachGRPCBackground(c, cfg)
 	}
-	return s, nil
+	return s, cleanup, nil
 }

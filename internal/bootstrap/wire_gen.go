@@ -43,7 +43,8 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	server, err := ProvideAPIServer(fxRatesService, config, rateclientClient)
+	chanBus := ProvideChanBus(config)
+	server, cleanup4, err := ProvideAPIServer(fxRatesService, config, rateclientClient, chanBus, logger)
 	if err != nil {
 		cleanup3()
 		cleanup2()
@@ -51,6 +52,7 @@ func InitAPI(ctx context.Context) (*httpserver.Server, func(), error) {
 		return nil, nil, err
 	}
 	return server, func() {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -109,6 +111,7 @@ var infraSet = wire.NewSet(
 	ProvideUoW,
 	ProvideRedisClient,
 	ProvideIdempotency,
+	ProvideChanBus,
 	ProvideRateProvider,
 	ProvideFXRatesService,
 	ProvideGRPCRateClient,
