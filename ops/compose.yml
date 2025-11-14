@@ -21,6 +21,7 @@
         files: [docker-compose.yml]
         project_name: fxrates-chan
         state: absent
+        remove_orphans: true
 
     - name: Bring up chan profile
       community.docker.docker_compose_v2:
@@ -28,6 +29,7 @@
         files: [docker-compose.yml]
         project_name: "fxrates-chan"
         state: present
+        remove_orphans: true
         profiles: ["chan"]
       environment:
         PROVIDER: "exchangeratesapi"
@@ -40,6 +42,7 @@
         files: [ docker-compose.yml ]
         project_name: fxrates-db
         state: absent
+        remove_orphans: true
 
     - name: Bring up db profile
       community.docker.docker_compose_v2:
@@ -47,6 +50,7 @@
         files: [docker-compose.yml]
         project_name: "fxrates-db"
         state: present
+        remove_orphans: true
         profiles: ["db"]
       environment:
         PROVIDER: "exchangeratesapi"
@@ -59,6 +63,7 @@
         files: [ docker-compose.yml ]
         project_name: fxrates-grpc
         state: absent
+        remove_orphans: true
 
     - name: Bring up grpc profile
       community.docker.docker_compose_v2:
@@ -66,6 +71,7 @@
         files: [docker-compose.yml]
         project_name: "fxrates-grpc"
         state: present
+        remove_orphans: true
         profiles: ["grpc"]
       environment:
         PROVIDER: "exchangeratesapi"
