@@ -10,7 +10,7 @@
 
     - name: Build image
       community.docker.docker_image:
-        name: fxrates:ec2
+        name: fxrates:dev
         build:
           path: "{{ playbook_dir }}/.."
         source: build
