@@ -22,6 +22,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/api /usr/local/bin/api
 COPY --from=build /out/worker /usr/local/bin/worker
+# ship OpenAPI spec for Swagger in container
+COPY --from=build /app/api/openapi.yaml /usr/local/share/fxrates/openapi.yaml
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/api"]

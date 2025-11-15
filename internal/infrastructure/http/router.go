@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"fxrates-service/internal/infrastructure/http/openapi"
@@ -48,6 +49,31 @@ func NewRouter(s *Server) http.Handler {
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(w, http.StatusBadRequest, "bad request")
 		},
+	})
+
+	r.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		var data []byte
+		var err error
+		for _, p := range []string{"api/openapi.yaml", "/usr/local/share/fxrates/openapi.yaml"} {
+			data, err = os.ReadFile(p)
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			http.Error(w, "failed to load openapi spec", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	})
+
+	// Serve minimal Swagger UI
+	r.Get("/swagger", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(swaggerHTML))
 	})
 	return r
 }
@@ -141,3 +167,44 @@ func traceID() func(http.Handler) http.Handler {
 		})
 	}
 }
+
+const swaggerHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>fxrates-service API</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = () => {
+      SwaggerUIBundle({
+        url: "/openapi.yaml",
+        dom_id: "#swagger-ui",
+        presets: [SwaggerUIBundle.presets.apis],
+        layout: "BaseLayout",
+        requestInterceptor: (req) => {
+          // Auto-generate X-Idempotency-Key if missing
+          const headers = req.headers || {};
+          if (!headers["X-Idempotency-Key"] && !headers["x-idempotency-key"]) {
+            if (window.crypto && window.crypto.randomUUID) {
+              headers["X-Idempotency-Key"] = window.crypto.randomUUID();
+            }
+          }
+          // Force requests to current origin (avoids hardcoded server URL ports)
+          try {
+            const u = new URL(req.url, window.location.href);
+            u.protocol = window.location.protocol;
+            u.host = window.location.host;
+            req.url = u.toString();
+          } catch (_) { /* ignore */ }
+          req.headers = headers;
+          return req;
+        }
+      });
+    };
+  </script>
+</body>
+</html>`
