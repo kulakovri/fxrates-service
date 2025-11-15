@@ -65,9 +65,14 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 		}
 		return domain.Quote{}, fmt.Errorf("provider: api_error")
 	}
-	rate, ok := res.Rates[quote]
+	// Prefer exact pair key if present (supports tests or providers that return "EUR/USD")
+	rate, ok := res.Rates[pair]
 	if !ok {
-		return domain.Quote{}, fmt.Errorf("provider: missing rate for %s", quote)
+		// Fallback to quote-only key (common provider behavior: "USD")
+		rate, ok = res.Rates[quote]
+		if !ok {
+			return domain.Quote{}, fmt.Errorf("provider: missing rate for %s", quote)
+		}
 	}
 	return domain.Quote{
 		Pair:      domain.Pair(pair),
