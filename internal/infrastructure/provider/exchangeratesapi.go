@@ -48,8 +48,8 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 	u.Path = exchangeRatesLatestPath
 	q := u.Query()
 	q.Set("access_key", p.APIKey)
-	q.Set("base", base)
-	q.Set("symbols", quote)
+	// Avoid base param (restricted on free plans). Request both currencies and compute cross-rate.
+	q.Set("symbols", base+","+quote)
 	u.RawQuery = q.Encode()
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -68,10 +68,30 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 	// Prefer exact pair key if present (supports tests or providers that return "EUR/USD")
 	rate, ok := res.Rates[pair]
 	if !ok {
-		// Fallback to quote-only key (common provider behavior: "USD")
-		rate, ok = res.Rates[quote]
-		if !ok {
-			return domain.Quote{}, fmt.Errorf("provider: missing rate for %s", quote)
+		// Compute cross-rate using provider base (typically EUR on free tier).
+		switch {
+		case res.Base == base:
+			// Pair base equals provider base: direct quote
+			r, ok := res.Rates[quote]
+			if !ok {
+				return domain.Quote{}, fmt.Errorf("provider: missing rate for %s", quote)
+			}
+			rate = r
+		case res.Base == quote:
+			// Pair quote equals provider base: invert base
+			bv, ok := res.Rates[base]
+			if !ok || bv == 0 {
+				return domain.Quote{}, fmt.Errorf("provider: missing or zero rate for %s", base)
+			}
+			rate = 1 / bv
+		default:
+			// Cross: QUOTE_per_BASE = (QUOTE_per_RESBASE) / (BASE_per_RESBASE)
+			qv, ok1 := res.Rates[quote]
+			bv, ok2 := res.Rates[base]
+			if !ok1 || !ok2 || bv == 0 {
+				return domain.Quote{}, fmt.Errorf("provider: missing rates for %s or %s", base, quote)
+			}
+			rate = qv / bv
 		}
 	}
 	return domain.Quote{
