@@ -33,7 +33,7 @@ jobs:
           ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
             cd ~/fxrates-service &&
             echo '${{ secrets.ANSIBLE_VAULT_PASSWORD }}' > .vault-pass.txt &&
-            ansible-playbook ops/compose.yml --vault-password-file .vault-pass.txt &&
+            ansible-playbook ops/compose.ec2.yml --vault-password-file .vault-pass.txt &&
             rm .vault-pass.txt
           "
 
