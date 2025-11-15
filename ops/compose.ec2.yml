@@ -8,13 +8,6 @@
 
   tasks:
 
-    - name: Build image
-      community.docker.docker_image:
-        name: fxrates:dev
-        build:
-          path: "{{ playbook_dir }}/.."
-        source: build
-
     - name: Tear down chan profile (ensure clean state)
       ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-chan down -v --remove-orphans
       args:
