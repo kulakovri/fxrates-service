@@ -8,7 +8,6 @@ x-api-base: &api-base
     STORAGE: "pg"
     DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
     LOG_LEVEL: "info"
-    REDIS_ADDR: ${REDIS_ADDR}
     REQUEST_TIMEOUT_MS: "3000"
   ports:
     - "8080:8080"
@@ -22,10 +21,9 @@ x-worker-base: &worker-base
   environment: &worker-base-env
     STORAGE: "pg"
     DATABASE_URL: "postgres://postgres:postgres@postgres:5432/fxrates?sslmode=disable"
-    PROVIDER: ${PROVIDER}
-    EXCHANGE_API_BASE: ${EXCHANGE_API_BASE}
-    EXCHANGE_API_KEY: ${EXCHANGE_API_KEY}
-    REDIS_ADDR: ${REDIS_ADDR}
+    PROVIDER: ${PROVIDER:-}
+    EXCHANGE_API_BASE: ${EXCHANGE_API_BASE:-}
+    EXCHANGE_API_KEY: ${EXCHANGE_API_KEY:-}
     WORKER_POLL_MS: "250"
     WORKER_BATCH_LIMIT: "10"
 
