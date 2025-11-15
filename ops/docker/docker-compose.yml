@@ -54,6 +54,9 @@ services:
         condition: service_healthy
     environment:
       <<: *api-base-env
+      PROVIDER: ${PROVIDER:-}
+      EXCHANGE_API_BASE: ${EXCHANGE_API_BASE:-}
+      EXCHANGE_API_KEY: ${EXCHANGE_API_KEY:-}
       WORKER_TYPE: "chan"
       DATABASE_URL: "postgres://postgres:postgres@postgres-chan:5432/fxrates?sslmode=disable"
       REDIS_ADDR: "redis-chan:6379"
