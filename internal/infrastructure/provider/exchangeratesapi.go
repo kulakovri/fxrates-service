@@ -38,11 +38,18 @@ type apiResponse struct {
 }
 
 func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain.Quote, error) {
+	if !domain.ValidatePair(pair) {
+		return domain.Quote{}, fmt.Errorf("provider: invalid pair %q", pair)
+	}
+	base := pair[:3]
+	quote := pair[4:]
+
 	u, _ := url.Parse(p.BaseURL)
 	u.Path = exchangeRatesLatestPath
 	q := u.Query()
 	q.Set("access_key", p.APIKey)
-	q.Set("symbols", pair)
+	q.Set("base", base)
+	q.Set("symbols", quote)
 	u.RawQuery = q.Encode()
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -51,9 +58,20 @@ func (p *ExchangeRatesAPIProvider) Get(ctx context.Context, pair string) (domain
 	if err := p.Client.DoJSON(ctx, req, &res, p.BackoffCfg); err != nil {
 		return domain.Quote{}, fmt.Errorf("provider: %w", err)
 	}
+
+	if !res.Success || res.Error != nil {
+		if res.Error != nil {
+			return domain.Quote{}, fmt.Errorf("provider: api_error code=%d info=%s", res.Error.Code, res.Error.Info)
+		}
+		return domain.Quote{}, fmt.Errorf("provider: api_error")
+	}
+	rate, ok := res.Rates[quote]
+	if !ok {
+		return domain.Quote{}, fmt.Errorf("provider: missing rate for %s", quote)
+	}
 	return domain.Quote{
 		Pair:      domain.Pair(pair),
-		Price:     res.Rates[pair],
+		Price:     rate,
 		UpdatedAt: time.Unix(res.Timestamp, 0).UTC(),
 	}, nil
 }
