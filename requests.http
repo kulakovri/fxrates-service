@@ -2,8 +2,6 @@
 GET {{ baseUrl }}/healthz
 Accept: application/json
 
-###
-
 ### Readiness check
 GET {{ baseUrl }}/readyz
 Accept: application/json
@@ -13,7 +11,7 @@ Accept: application/json
 ### Queue quote update
 POST {{ baseUrl }}/quotes/updates
 Content-Type: application/json
-X-Idempotency-Key: demo-4
+X-Idempotency-Key: demo-6
 
 {
   "pair": "EUR/USD"
@@ -22,7 +20,7 @@ X-Idempotency-Key: demo-4
 ###
 
 # Get quote by id
-GET {{ baseUrl }}/quotes/updates/6198ea78-8ed2-491d-8410-0f6b7f9d55f0
+GET {{ baseUrl }}/quotes/updates/a928547b-6a22-4064-a49a-2251e3d45b9d
 Accept: application/json
 
 ###

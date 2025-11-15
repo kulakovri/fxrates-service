@@ -1,5 +1,4 @@
-# ops/compose.dev.yml
-- name: Bring up fxrates stack with Compose v2
+- name: Spin fxrates-service (all profiles) with keys
   hosts: localhost
   connection: local
   gather_facts: false
@@ -8,15 +7,72 @@
     - "{{ playbook_dir }}/secrets/dev.yml"
 
   tasks:
-    - name: Up/Restart stack
+
+    - name: Build image
+      community.docker.docker_image:
+        name: fxrates:dev
+        build:
+          path: "{{ playbook_dir }}/.."
+        source: build
+
+    - name: Tear down chan profile (ensure clean state)
       community.docker.docker_compose_v2:
         project_src: "{{ playbook_dir }}/docker"
         files: [docker-compose.yml]
-        state: present
-        build: always
-        pull: missing
+        project_name: fxrates-chan
+        state: absent
         remove_orphans: true
-        recreate: auto
+
+    - name: Bring up chan profile
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [docker-compose.yml]
+        project_name: "fxrates-chan"
+        state: present
+        remove_orphans: true
+        profiles: ["chan"]
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
+
+    - name: Tear down db profile (ensure clean state)
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [ docker-compose.yml ]
+        project_name: fxrates-db
+        state: absent
+        remove_orphans: true
+
+    - name: Bring up db profile
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [docker-compose.yml]
+        project_name: "fxrates-db"
+        state: present
+        remove_orphans: true
+        profiles: ["db"]
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
+
+    - name: Tear down grpc profile (ensure clean state)
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [ docker-compose.yml ]
+        project_name: fxrates-grpc
+        state: absent
+        remove_orphans: true
+
+    - name: Bring up grpc profile
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/docker"
+        files: [docker-compose.yml]
+        project_name: "fxrates-grpc"
+        state: present
+        remove_orphans: true
+        profiles: ["grpc"]
       environment:
         PROVIDER: "exchangeratesapi"
         EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"

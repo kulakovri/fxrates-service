@@ -12,20 +12,6 @@ Asynchronous FX rates microservice in Go 1.23.
 - The `exchangeratesapi` provider computes cross rates from the API's EUR base so it works even on plans that disallow changing the base.
 - Configure provider credentials via `PROVIDER=exchangeratesapi`, `EXCHANGE_API_BASE=https://api.exchangeratesapi.io`, and `EXCHANGE_API_KEY=<your-key>`.
 
-## Run
-
-```bash
-go run ./cmd/api
-curl :8080/healthz
-
-Test
-go test ./... -race -count=1
-
-Docker
-docker build -t fxrates:dev .
-docker run --rm -p 8080:8080 fxrates:dev
-```
-
 ## Running with different worker modes
 
 -Build/rebuild docker containers
