@@ -1,5 +1,9 @@
 # fxrates-service
 
+Asynchronous FX rates microservice written in Go 1.23.
+
+Implements three worker strategies (chan, db, grpc) and exposes a uniform HTTP API with idempotency, persistence, and background processing.
+
 ## TL;DR — Quick Start
 
 Build and run all three worker modes locally (chan, db, grpc) using docker-compose.
@@ -16,6 +20,14 @@ This spins up:
 | db | http://localhost:8082 |
 | gRPC | http://localhost:8083 |
 
+that will mirror deployed on ec2 versions of the service
+
+| Mode | URL                      |
+|---|--------------------------|
+| chan | http://3.148.167.60/chan |
+| db | http://3.148.167.60/db   |
+| gRPC | http://3.148.167.60/grpc |
+
 Each instance has its own Postgres + Redis, so queues and data do not interfere.
 
 Swagger UI is available at:
@@ -24,9 +36,8 @@ Swagger UI is available at:
 http://localhost:<port>/swagger
 ```
 
-Asynchronous FX rates microservice written in Go 1.23.
+For GoLand users requests can be made with [requests.http](requests.http) with prepared environments [http-client.env.json](http-client.env.json)
 
-Implements three worker strategies (chan, db, grpc) and exposes a uniform HTTP API with idempotency, persistence, and background processing.
 
 ## Documentation
 

@@ -32,7 +32,7 @@ if (( BUILD )); then
   docker build -t fxrates:dev .
 fi
 
-compose="docker compose -f ops/docker/docker-compose.yml"
+compose="docker compose --env-file .env -f ops/docker/docker-compose.yml"
 
 start_profile() {
   local p="$1"
