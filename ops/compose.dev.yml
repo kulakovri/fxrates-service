@@ -1,0 +1,64 @@
+- name: Spin fxrates-service (all profiles) with keys
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - "{{ playbook_dir }}/secrets/dev.yml"
+
+  tasks:
+
+    - name: Build image
+      community.docker.docker_image:
+        name: fxrates:dev
+        build:
+          path: "{{ playbook_dir }}/.."
+        source: build
+
+    - name: Tear down chan profile (ensure clean state)
+      ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-chan down -v --remove-orphans
+      args:
+        chdir: "{{ playbook_dir }}/docker"
+      changed_when: false
+      failed_when: false
+
+    - name: Bring up chan profile
+      ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-chan --profile chan up -d --remove-orphans
+      args:
+        chdir: "{{ playbook_dir }}/docker"
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
+
+    - name: Tear down db profile (ensure clean state)
+      ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-db down -v --remove-orphans
+      args:
+        chdir: "{{ playbook_dir }}/docker"
+      changed_when: false
+      failed_when: false
+
+    - name: Bring up db profile
+      ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-db --profile db up -d --remove-orphans
+      args:
+        chdir: "{{ playbook_dir }}/docker"
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"
+
+    - name: Tear down grpc profile (ensure clean state)
+      ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-grpc down -v --remove-orphans
+      args:
+        chdir: "{{ playbook_dir }}/docker"
+      changed_when: false
+      failed_when: false
+
+    - name: Bring up grpc profile
+      ansible.builtin.command: docker compose -f docker-compose.yml -p fxrates-grpc --profile grpc up -d --remove-orphans
+      args:
+        chdir: "{{ playbook_dir }}/docker"
+      environment:
+        PROVIDER: "exchangeratesapi"
+        EXCHANGE_API_BASE: "{{ env.EXCHANGE_API_BASE }}"
+        EXCHANGE_API_KEY: "{{ env.EXCHANGE_API_KEY }}"

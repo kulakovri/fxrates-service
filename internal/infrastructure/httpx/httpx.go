@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -49,10 +51,19 @@ func (c *Client) DoJSON(ctx context.Context, req *http.Request, out any, cfg *Ba
 			return err
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode >= 500 {
-			return fmt.Errorf("server error %d", resp.StatusCode)
-		}
-		if resp.StatusCode != 200 {
+		if resp.StatusCode >= 500 || resp.StatusCode != http.StatusOK {
+			const maxErrBody = 2048
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+			snippet := strings.TrimSpace(string(b))
+			if resp.StatusCode >= 500 {
+				if snippet != "" {
+					return fmt.Errorf("server error %d: %s", resp.StatusCode, snippet)
+				}
+				return fmt.Errorf("server error %d", resp.StatusCode)
+			}
+			if snippet != "" {
+				return backoff.Permanent(fmt.Errorf("status %d: %s", resp.StatusCode, snippet))
+			}
 			return backoff.Permanent(fmt.Errorf("status %d", resp.StatusCode))
 		}
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

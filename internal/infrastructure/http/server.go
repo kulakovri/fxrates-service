@@ -115,6 +115,7 @@ func (s *Server) GetQuoteUpdate(w http.ResponseWriter, r *http.Request, id strin
 	resp := openapi.QuoteUpdateDetails{
 		UpdateId:  upd.ID,
 		Pair:      string(upd.Pair),
+		Error:     upd.Error,
 		Status:    mapStatus(upd.Status),
 		Price:     price,
 		UpdatedAt: upd.UpdatedAt,
