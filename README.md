@@ -39,6 +39,14 @@ docker compose -f ops/docker/docker-compose.yml -p fxrates-db --profile db up -d
 docker compose -f ops/docker/docker-compose.yml -p fxrates-grpc --profile grpc up -d
 ```
 
+## Worker Modes Comparison
+
+| Mode | Transport / Queue | Runs In | Durability | When to Use | Key Trade-offs |
+|---|---|---|---|---|---|
+| chan | In-memory Go channel | API process | ❌ No persistence | Local dev, simplicity | Loses jobs on restart, not scalable |
+| db | PostgreSQL (quote_updates + FOR UPDATE SKIP LOCKED) | Separate worker process | ✅ Durable queue | Realistic production-like flow | DB used as queue, polling latency |
+| grpc | gRPC request/stream to worker pool | Separate gRPC workers | ⚠️ Depends on client retries | Exploring microservice topology | More moving parts, needs RPC infra |
+
 ## gRPC worker mode and client-side load balancing
 
 When `WORKER_TYPE=grpc`, the API returns 202 immediately and performs the fetch via gRPC in the background, persisting the result to Postgres.

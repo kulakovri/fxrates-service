@@ -2,87 +2,176 @@
 
 ## Clean Architecture and Layer Boundaries
 
-The project follows a strict Clean Architecture pattern:
+The service follows a Clean Architecture layout to enforce strict separation of concerns:
 
-- **Domain** holds pure business entities and value objects — no technical or infrastructural concerns.  
-- **Application** defines use cases and ports (interfaces).  
-- **Infrastructure** contains adapters for HTTP, PostgreSQL, Redis, logging, and background workers.  
-- **cmd/** holds composition roots (API and Worker).
+- **Domain** — pure business rules, value objects, and invariants. No external dependencies.
+- **Application** — use‑case orchestration plus ports/interfaces for persistence, providers, and workers.
+- **Infrastructure** — adapters for PostgreSQL, Redis, HTTP client, logging, and background worker runtime.
+- **cmd/** — composition roots for API and Worker processes.
 
-This separation ensures testability, composability, and clear ownership of responsibilities.
+This structure ensures testability, easy substitution of adapters, and predictable ownership of responsibilities.
 
 ## Centralized Configuration
 
-Runtime configuration is unified in a single package: `internal/config/config.go`.
+All runtime configuration is provided by `internal/config/config.go`. It loads and validates environment variables for:
 
-- All environment variables (service port, storage backend, `DATABASE_URL`, Redis settings, provider type/URL/API key, worker type, polling interval, batch size, etc.) are read in one place.
-- Sensible defaults are provided, and the resulting `Config` struct is injected into bootstrap.
-- This removes scattered `os.Getenv` calls and makes configuration reproducible across local, CI, and container environments.
-- Both API and Worker processes consume the same `Config` via bootstrap, keeping environment-driven behavior explicit and testable.
+- **API port**
+- **Worker type** (db/chan/grpc)
+- **Polling intervals and batch sizes**
+- **PostgreSQL URL**
+- **Redis URL/DB/password and idempotency TTL**
+- **FX provider base URL and API key**
+- **HTTP backoff settings (initial/max/total)**
+- **Log level**
 
-## Bootstrap Composition Roots
+Storing all configuration in one place eliminates scattered `os.Getenv` calls and makes the service reproducible across local, CI, and container environments.
 
-The composition roots (API and Worker) are kept minimal and delegate wiring to bootstrap:
+## Bootstrap as Composition Root
 
-- `bootstrap.InitAPI(ctx)` builds repositories, Redis idempotency store, rate provider, and returns a server object with a `Run(ctx)` method.
-- `bootstrap.InitWorker(ctx)` builds repositories and constructs the configured worker implementation.
-- Cleanup functions (closing DB/Redis) are aggregated and returned for a single deferred call per process.
-- Environment-driven choices (e.g., fake vs external rate provider, polling cadence) are applied in bootstrap using the centralized `Config`.
+Bootstrapping logic lives in `internal/bootstrap/` and handles:
 
-## Immutable Quotes History
+- wiring repositories
+- wiring rate provider
+- wiring Redis idempotency store
+- building either API or Worker process
+- managing cleanup lifecycles (closing DB, Redis)
 
-Introduced `quotes_history` as an append-only table that records all fetched FX quotes.  
-The `quotes` table remains mutable and stores the latest quote per pair for quick lookups.  
-This design allows temporal analysis, auditability, and future replayability without complicating read paths.
+Each process has a single entry point (`InitAPI`, `InitWorker`) which returns a `(service, cleanup)` pair, keeping `cmd/api/main.go` and `cmd/worker/main.go` intentionally minimal.
 
-## Idempotency and Redis Integration
+## Data Model and Persistence
 
-Initially, idempotency was considered at the database layer via a unique key on `quote_updates`,  
-but we moved it to Redis for these reasons:
+### Immutable History
 
-- Keeps business entities pure and free of transport-level details.  
-- Avoids permanent storage of transient request metadata.  
-- Enables TTL-based cleanup and faster access.  
-- Scales horizontally for multiple API replicas.
+- The `quotes_history` table records every retrieved FX rate (append‑only).
+- The `quotes` table holds only the latest quote per pair.
 
-Redis now acts as a shared, short-lived store for `X-Idempotency-Key` enforcement.  
-The API rejects duplicate keys within the TTL window with HTTP 409 Conflict.
+This enables temporal analysis without complicating frequent read paths.
 
-## Database Design
+### Database Conventions
 
-- PostgreSQL is the primary datastore.  
-- Tables are pluralized for naming consistency.  
-- Each table defines explicit data integrity constraints.  
-- Migrations use **golang-migrate** with `.up.sql`/`.down.sql` symmetry for reversibility.  
-- No generic `created_at`/`modified_at` added early — explicit timestamps (e.g. `updated_at`) per use case.
+- Tables are pluralized.
+- All constraints (PK, FK, unique keys) are explicit.
+- Timestamps are added only where meaningful (e.g., `updated_at` for quotes; `completed_at` for update jobs).
+- Migrations use golang‑migrate and maintain `.up.sql`/`.down.sql` symmetry.
 
-## Worker Model
+## Idempotency With Redis
 
-The worker runs separately from the API process.  
-It polls for queued updates from the database (`quote_updates`), fetches rates via a provider,  
-and persists results back.  
-This separation enables horizontal scaling and future replacement of transport channels (e.g., SQS).  
-A `Worker` interface was introduced to allow multiple strategies (e.g., `DbWorker`).  
-An in-memory worker exists only as a test helper (`*_test.go`) and is not shipped in binaries.
+The API exposes `X-Idempotency-Key` for `POST /quotes/updates`.
 
-## Observability Philosophy
+Idempotency storage is implemented in Redis rather than the database because:
 
-- Liveness (`/healthz`): confirms the process is running.  
-- Readiness (`/readyz`): verifies database connectivity and migration status.  
-- Structured JSON logs via Zap with request IDs.  
-- `trace_id` propagation is deferred until inter-service tracing is introduced to avoid mixing cross-cutting concerns into domain or DB entities prematurely.
+- idempotency is transport‑level, not a domain invariant
+- Redis enables TTL‑based cleanup
+- avoids polluting tables with ephemeral request metadata
+- fast and horizontally scalable
+
+A repeated key results in HTTP 409 Conflict.
+
+## Background Worker Model
+
+The service supports three worker modes (chan, db, grpc) that all share the same business behavior but differ in how work is transported and executed.
+
+### What is common across all worker types
+
+1. Job lifecycle & statuses
+   - Jobs live in `quote_updates` and move through: queued → processing → done/failed.
+   - A job always corresponds to one quote update for a specific FX pair.
+
+2. Application workflow
+   - For every job, the service:
+     1. Marks it as processing.
+     2. Calls the `RateProvider` (`Get(ctx, pair)`).
+     3. Writes the result into `quotes_history` and updates `quotes` with the latest price.
+     4. Marks the job as done or failed and persists the error message if any.
+
+3. Idempotency & error handling
+   - The HTTP API enforces `X-Idempotency-Key`, regardless of worker type.
+   - Provider failures are surfaced as job errors and logged; the job is not retried endlessly inside the same loop.
+
+4. Ports & interfaces
+   - The application layer only depends on ports: `UpdateJobRepo`, `QuoteRepo`, `RateProvider`, and `Worker`.
+   - Each mode is just a different adapter for that `Worker` abstraction.
+
+### How the three worker modes differ
+
+#### 1. chan mode — in‑process worker (local dev)
+
+- Execution model: the worker runs inside the API process.
+- Transport: a Go channel connects HTTP handler → worker. Jobs are not persisted before processing.
+- Persistence: results are still written to Postgres, but the queue itself is in‑memory.
+- Use case: local development / fast iteration; fewer moving pieces.
+
+Key trade‑offs:
+
+- No durability for queued jobs (they disappear if the process dies).
+- Simplest to reason about; great for tests and demos.
+
+#### 2. db mode — database‑backed polling worker
+
+- Execution model: worker runs as a separate process/container.
+- Transport: `quote_updates` acts as a durable queue.
+- The worker uses `ClaimQueued` with FOR UPDATE SKIP LOCKED semantics to claim work.
+- Persistence: jobs are durable; a restart does not lose queued work.
+- Use case: production‑like mode with durability, backpressure, and horizontal scaling (multiple workers polling the same DB).
+
+Key trade‑offs:
+
+- Simpler than introducing a message broker, at the cost of using the DB as a queue.
+
+#### 3. grpc mode — gRPC worker pool
+
+- Execution model: API process enqueues work and pushes it over gRPC to a separate worker service. Workers run in their own containers and expose a gRPC server.
+- Transport: gRPC stream/request instead of DB polling.
+- Persistence: results are still written into Postgres, but the transport between API and worker is decoupled from the DB.
+- Use case: models a future evolution where workers live in a separate service (or language/runtime) accessed via RPC rather than DB polling.
+
+Key trade‑offs:
+
+- More moving parts than db mode, but closer to a proper microservice topology.
+- Good for exploring how the same application core would behave behind an RPC boundary.
+
+## HTTP Provider Abstraction
+
+Providers implement the application port:
+
+```go
+type RateProvider interface {
+    Get(ctx context.Context, pair string) (domain.Quote, error)
+}
+```
+
+Two implementations exist:
+
+- `Fake` (for tests)
+- `ExchangeRatesAPIProvider` (real external API)
+
+The HTTP client wrapper (`httpx.Client`) includes JSON decoding and retry with exponential backoff; non‑200 responses are surfaced cleanly so workers can record failures.
+
+## Structured Logging
+
+Logging uses Zap in production mode with:
+
+- JSON output
+- ISO8601 timestamps
+- log level configurable via environment
+
+At present the base logger is used everywhere; contextual fields (e.g., `request_id`, `trace_id`, service mode) can be added via `logx.WithFields(ctx)` when those values are propagated. There is no metrics layer or distributed tracing in scope.
+
+This keeps observability minimal, vendor‑agnostic, and test‑friendly.
 
 ## Testing Strategy
 
-- Unit tests colocated with code.  
-- Integration tests use Testcontainers (Postgres) guarded by an env flag.  
-- Redis tests use miniredis for deterministic behavior.  
-- Tests follow the AAA pattern and use `testify/require` assertions.
+- Unit tests colocated with code
+- DB integration tests using Testcontainers for Postgres (optional)
+- Redis tests using miniredis for deterministic behavior
+- Tests follow AAA and prefer `testify/require`
 
-## Guiding Principles
+The design avoids global state and prefers small, injectable dependencies.
 
-- Explicit over magic.  
-- Prefer functional seams (e.g., `WithClock`, `WithIDGen`) over globals.  
-- Keep technical metadata (idempotency keys, trace headers) outside domain.  
-- Treat Redis, Postgres, and Workers as interchangeable adapters — ports stay stable.  
-- Every process logs request and correlation identifiers for debuggability.
+## Guiding Architectural Principles
+
+- Explicit over magic — no hidden global singletons beyond the logger.
+- Dependency inversion — domain does not import infrastructure.
+- No cross‑layer leakage — HTTP headers, Redis keys, and tracing IDs stay out of domain entities.
+- Replaceability — databases, providers, and worker strategies can change without rewriting business logic.
+- Keep the system boring — avoid unnecessary complexity (no metrics stack, no distributed tracing) for a small service.
