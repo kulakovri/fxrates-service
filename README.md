@@ -1,5 +1,29 @@
 # fxrates-service
 
+## TL;DR — Quick Start
+
+Build and run all three worker modes locally (chan, db, grpc) using docker-compose.
+
+```bash
+./run.sh -b
+```
+
+This spins up:
+
+| Mode | URL |
+|---|---|
+| chan | http://localhost:8081 |
+| db | http://localhost:8082 |
+| gRPC | http://localhost:8083 |
+
+Each instance has its own Postgres + Redis, so queues and data do not interfere.
+
+Swagger UI is available at:
+
+```
+http://localhost:<port>/swagger
+```
+
 Asynchronous FX rates microservice written in Go 1.23.
 
 Implements three worker strategies (chan, db, grpc) and exposes a uniform HTTP API with idempotency, persistence, and background processing.
@@ -7,7 +31,7 @@ Implements three worker strategies (chan, db, grpc) and exposes a uniform HTTP A
 ## Documentation
 
 - [Architecture Overview](docs/ARCHITECTURE.md)
-- [Design Decisions](DESIGN_DECISIONS.md)
+- [Design Decisions](docs/DESIGN_DECISIONS.md)
 
 ## Quick Start (Local)
 
